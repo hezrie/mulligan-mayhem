@@ -270,7 +270,9 @@ jobs:
 
   merge:
     needs: [review, submit]
-    if: needs.submit.outputs.approved == 'true'
+    # !cancelled(): 'sweep' (an ancestor via review) is skipped on every non-scheduled run, and
+    # without a status function GitHub would skip this job too.
+    if: ${{ !cancelled() && needs.submit.outputs.approved == 'true' }}
     permissions:
       contents: read
       checks: read

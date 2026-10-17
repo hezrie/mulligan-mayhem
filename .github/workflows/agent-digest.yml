@@ -78,6 +78,7 @@ jobs:
       contents: read
     outputs:
       hooks_loaded: ${{ steps.canary.outputs.loaded }}
+      claude_outcome: ${{ steps.claude.outcome }}
       turns: ${{ steps.stats.outputs.turns }}
       cost_usd: ${{ steps.stats.outputs.cost_usd }}
       duration_sec: ${{ steps.stats.outputs.duration_sec }}
@@ -160,7 +161,8 @@ jobs:
 
   pr:
     needs: [report, llm]
-    if: ${{ !cancelled() && needs.llm.outputs.hooks_loaded == 'true' }}
+    # An errored run (turn limit, crash) may have left half-finished edits: never ship those.
+    if: ${{ !cancelled() && needs.llm.outputs.hooks_loaded == 'true' && needs.llm.outputs.claude_outcome == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

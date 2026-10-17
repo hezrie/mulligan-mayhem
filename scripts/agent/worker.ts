@@ -186,12 +186,23 @@ const CLOSING_KEYWORD =
 const MAX_BODY = 60_000;
 
 /**
- * The PR body is LLM-written. Its closing keywords are neutralized (merging must close exactly one
- * issue: this ticket, never e.g. the run log), then one canonical "Closes #N" is appended.
+ * The PR body is LLM-written. Closing keywords aimed at any other issue are neutralized (merging
+ * must close exactly one issue: this ticket, never e.g. the run log); "Closes #N" for the ticket
+ * itself stays, and is added if missing.
  */
 export function finalizePrBody(body: string | null, issue: number, runUrl: string): string {
+  const own = new RegExp(`^#${String(issue)}(?!\\d)`);
   const base = body?.trim()
-    ? body.trim().slice(0, MAX_BODY).replace(CLOSING_KEYWORD, 'Refs$1')
+    ? body
+        .trim()
+        .slice(0, MAX_BODY)
+        .replace(CLOSING_KEYWORD, (match: string, sep: string, offset: number, text: string) =>
+          own.test(text.slice(offset + match.length)) ? match : `Refs${sep}`,
+        )
     : `Implements #${String(issue)}.\n\n⚠️ The worker did not write a PR description with the criterion → test mapping.`;
-  return `${base}\n\nCloses #${String(issue)}\n\n---\n🤖 Opened by the worker agent · [run](${runUrl}) · reviewed next by the reviewer agent`;
+  const closesOwn = new RegExp(
+    `\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\\b(?:\\s*:\\s*|\\s+)#${String(issue)}(?!\\d)`,
+    'i',
+  ).test(base);
+  return `${base}${closesOwn ? '' : `\n\nCloses #${String(issue)}`}\n\n---\n🤖 Opened by the worker agent · [run](${runUrl}) · reviewed next by the reviewer agent`;
 }

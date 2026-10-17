@@ -227,6 +227,14 @@ describe('PR helpers', () => {
     expect(body.match(/Closes #\d+/g)).toEqual(['Closes #12']);
   });
 
+  it('keeps the ticket’s own "Closes #N" as written (no "Refs #N" next to it), and #120 is not #12', () => {
+    const body = finalizePrBody('Sand friction.\n\nCloses #12\nAlso closes #120.', 12, RUN);
+    expect(body).toContain('Closes #12\n');
+    expect(body).not.toMatch(/Refs #12\b/);
+    expect(body).toContain('Also Refs #120.');
+    expect(body.match(/Closes #12\b/g)).toHaveLength(1);
+  });
+
   it('marks plan comments so the reviewer can find them', () => {
     expect(planComment('1. Do X\n2. Test Y')).toMatch(
       /^<!-- mm:plan -->\n## 🤖 Implementation plan/,
