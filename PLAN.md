@@ -8,7 +8,7 @@
 | ----- | ---------------------- | --------------------------------- |
 | 0     | Recon & plan           | ✅ Approved 2026-10-17            |
 | 1     | Scaffold & tooling     | ✅ Done                           |
-| 2     | Rulebook               | ⏳                                |
+| 2     | Rulebook               | ✅ Done                           |
 | 3     | Walking skeleton       | ⏳                                |
 | 4     | Guardrails             | ⏳                                |
 | 5     | CI/CD + repo + Pages   | ⏳                                |
@@ -74,6 +74,16 @@ Latest relevant packages: vite 8.3, vitest 5.0 (+ coverage-v8), eslint 10.12, ty
 19. **Refiner trust gate (this is a public repo).** A deterministic first step checks whether the issue author is OWNER/COLLABORATOR or listed in `trustedSubmitters`. If not, it comments "thanks, waiting for maintainer triage" and stops. It runs once you re-apply `status:needs-refinement`. The issue text always goes into the prompt as untrusted data.
 20. **Daily cap and attempt counting** use the run-log issue (JSON comments) as the source of truth, so the picker stays deterministic and testable from a snapshot.
 21. **gh account.** In Phase 5 I'll run `gh auth switch --user hezrie`. Afterwards you can switch back with `gh auth switch --user NextLED`.
+22. **Protected paths go beyond the brief's list, from a single source of truth** (`protectedPaths` in `agent.config.json`). On top of the brief's list:
+    - `package.json`, `package-lock.json`, `.nvmrc` (new dependencies are a supply-chain decision, and an agent could otherwise rewrite the `check` script)
+    - `tsconfig*.json`, `vite.config.ts` (it controls `__TEST_API__`), `playwright.config.ts`, Prettier config
+    - `e2e/fixtures.ts` (the zero-console-errors gate)
+    - `docs/DEFINITION_OF_*.md`, `docs/decisions/`, `PLAN.md`
+
+    Hooks (via `jq`), `agent-guard` and the CODEOWNERS sync test all read the same list.
+
+23. **Golden replays: new files are allowed, edits are not.** Agents may **add** new replay files (needed for "add a hole", and they can't hide a regression). Modifying or deleting an existing replay requires `physics-change`. The hook blocks Edit/overwrite only; `agent-guard` checks git status M/D/R.
+24. **Rulebook is tested.** `tests/docs/rulebook.test.ts` enforces CLAUDE.md ≤ 150 lines, checks that CLAUDE.md links every core doc, and checks that no doc has a broken relative link.
 
 ## How the loop is wired (who holds which credential)
 
@@ -125,6 +135,14 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
   - `docs/decisions/0001-custom-deterministic-physics.md`, covering fixed timestep, swept collisions, IEEE-exact math, and state hashing
   - `.agent/LESSONS.md`: a format header and nothing else yet
 - **Exit:** docs cross-link correctly; check green.
+
+- **As built:** CLAUDE.md is 126 lines. The docs commit Phase 3 to some specific names, which must exist when Phase 3 ends:
+  - `npm run replay:record`
+  - `TERRAIN_KINDS` / `TERRAIN` in `core/physics/terrain.ts`, and terrain `zones` in the schema
+  - `src/render/palette.ts`
+  - `tests/unit/core/course/holes.test.ts`
+  - `GameSession`
+  - `scripts/agent/escalate.ts`, which arrives with Phase 4/7
 
 ### Phase 3: Walking skeleton (test-first)
 
@@ -276,3 +294,4 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 
 - 2026-10-08: Phase 0 complete. Plan written, awaiting approval.
 - 2026-10-17: Plan approved. Phase 1 complete: tooling wired, `npm run check` green (24 unit + 5 e2e tests).
+- 2026-10-17: Phase 2 complete: rulebook + 6 docs + ADR 0001 + lessons file; doc tests added.
