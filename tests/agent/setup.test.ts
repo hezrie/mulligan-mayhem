@@ -3,6 +3,15 @@ import { LABELS } from '../../scripts/agent/labels.ts';
 import type { GhClient, HttpMethod } from '../../scripts/agent/tracker/gh-client.ts';
 import { planLabels, syncLabels } from '../../scripts/setup/labels.ts';
 import { ensureRunLogIssue } from '../../scripts/setup/run-log-issue.ts';
+import {
+  BACKLOG,
+  backlogProblems,
+  renderSeed,
+  seedBacklog,
+  seedLabels,
+} from '../../scripts/setup/seed-backlog.ts';
+import { definitionOfReadyProblems } from '../../scripts/agent/ticket-format.ts';
+import { blockers } from '../../scripts/agent/tickets.ts';
 
 describe('label setup', () => {
   it('creates missing labels, updates changed ones, and leaves matching ones alone', () => {
@@ -102,5 +111,53 @@ describe('run log issue setup', () => {
       'graphql',
       'GET repos/o/r/issues?state=open&per_page=100&labels=meta%3Arun-log',
     ]);
+  });
+});
+
+describe('seed backlog (Phase 8)', () => {
+  it('has 10–12 tickets that meet the structural Definition of Ready, in dependency order', () => {
+    expect(BACKLOG.length).toBeGreaterThanOrEqual(10);
+    expect(BACKLOG.length).toBeLessThanOrEqual(12);
+    expect(backlogProblems(BACKLOG)).toEqual([]);
+    for (const t of BACKLOG)
+      expect(definitionOfReadyProblems(renderSeed(t, () => 7)), t.key).toEqual([]);
+  });
+
+  it('queues exactly the first three (unblocked, size S); the rest wait as proposed', () => {
+    expect(BACKLOG.map((t) => t.ready)).toEqual(BACKLOG.map((_, i) => i < 3));
+    for (const t of BACKLOG.slice(0, 3)) {
+      expect(t.blockedBy).toEqual([]);
+      expect(t.size).toBe('S');
+    }
+    expect(seedLabels(BACKLOG[0]!)).toContain('status:ready');
+    expect(seedLabels(BACKLOG[5]!)).toContain('status:proposed');
+  });
+
+  it('creates every ticket once, resolving "Blocked by" to real issue numbers; re-running creates nothing', async () => {
+    const created: { title: string; body: string; labels: string[] }[] = [];
+    const issues: { number: number; title: string }[] = [{ number: 2, title: '🤖 Agent Run Log' }];
+    const gh: GhClient = {
+      rest: <T>(method: HttpMethod, _path: string, body?: unknown): Promise<T> => {
+        if (method !== 'POST') return Promise.resolve(null as T);
+        const issue = body as { title: string; body: string; labels: string[] };
+        const number = 6 + created.length;
+        created.push(issue);
+        issues.push({ number, title: issue.title });
+        return Promise.resolve({ number } as T);
+      },
+      restAll: <T>(): Promise<T[]> => Promise.resolve([...issues] as T[]),
+      graphql: <T>(): Promise<T> => Promise.resolve(null as T),
+    };
+    const first = await seedBacklog(gh, 'o/r');
+    expect(first.filter((r) => r.created)).toHaveLength(BACKLOG.length);
+    const numberOf = new Map(first.map((r) => [r.key, r.number]));
+    for (const [i, t] of BACKLOG.entries()) {
+      expect(blockers(created[i]!.body)).toEqual(
+        t.blockedBy.map((k) => numberOf.get(k)).sort((a, b) => (a ?? 0) - (b ?? 0)),
+      );
+    }
+    const second = await seedBacklog(gh, 'o/r');
+    expect(second.filter((r) => r.created)).toEqual([]);
+    expect(created).toHaveLength(BACKLOG.length);
   });
 });
