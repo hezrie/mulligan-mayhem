@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#1f5f2a" />
+    <link rel="icon" href="data:," />
+    <title>Mulligan Mayhem</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #1f5f2a;
+        color: #fff;
+        font-family: system-ui, sans-serif;
+        overscroll-behavior: none;
+      }
+      #app {
+        position: relative;
+        display: grid;
+        place-items: center;
+        height: 100%;
+      }
+      #game {
+        touch-action: none;
+        max-width: 100%;
+        max-height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="game" width="360" height="640" aria-label="Mini-golf course"></canvas>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

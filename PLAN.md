@@ -4,38 +4,38 @@
 
 ## Status
 
-| Phase | Scope | Status |
-| --- | --- | --- |
-| 0 | Recon & plan | ✅ Done, awaiting approval |
-| 1 | Scaffold & tooling | ⏳ |
-| 2 | Rulebook | ⏳ |
-| 3 | Walking skeleton | ⏳ |
-| 4 | Guardrails | ⏳ |
-| 5 | CI/CD + repo + Pages | ⏳ |
-| 6 | Ticket system | ⏳ |
-| 7 | Agent workflows | ⏳ (needs secrets from you first) |
-| 8 | Seed backlog & dry run | ⏳ |
+| Phase | Scope                  | Status                            |
+| ----- | ---------------------- | --------------------------------- |
+| 0     | Recon & plan           | ✅ Approved 2026-10-17            |
+| 1     | Scaffold & tooling     | ✅ Done                           |
+| 2     | Rulebook               | ⏳                                |
+| 3     | Walking skeleton       | ⏳                                |
+| 4     | Guardrails             | ⏳                                |
+| 5     | CI/CD + repo + Pages   | ⏳                                |
+| 6     | Ticket system          | ⏳                                |
+| 7     | Agent workflows        | ⏳ (needs secrets from you first) |
+| 8     | Seed backlog & dry run | ⏳                                |
 
 ## Decisions (Phase 0)
 
-| Question | Answer |
-| --- | --- |
-| Repo owner and CODEOWNER | `@hezrie` → `hezrie/mulligan-mayhem` |
-| Visibility | **Public**: free Pages, branch protection, CODEOWNERS enforcement, unlimited Actions minutes |
-| Bot identity | **GitHub App** that you create (no admin bypass, no Workflows permission) |
-| Commit author | `hezrie <328370658+hezrie@users.noreply.github.com>`, set **repo-locally** only |
-| Deploy URL (expected) | `https://hezrie.github.io/mulligan-mayhem/` |
+| Question                 | Answer                                                                                       |
+| ------------------------ | -------------------------------------------------------------------------------------------- |
+| Repo owner and CODEOWNER | `@hezrie` → `hezrie/mulligan-mayhem`                                                         |
+| Visibility               | **Public**: free Pages, branch protection, CODEOWNERS enforcement, unlimited Actions minutes |
+| Bot identity             | **GitHub App** that you create (no admin bypass, no Workflows permission)                    |
+| Commit author            | `hezrie <328370658+hezrie@users.noreply.github.com>`, set **repo-locally** only              |
+| Deploy URL (expected)    | `https://hezrie.github.io/mulligan-mayhem/`                                                  |
 
 ## Environment recon
 
-| Tool | Found | Notes |
-| --- | --- | --- |
-| node | v24.15.0 | Node 24 is Active LTS today. Pin `24` in `.nvmrc` and `engines: ">=24 <25"`. |
-| npm | 11.12.1 | ✓ |
-| git | 2.50.1 | No global identity configured. I'll set it repo-locally. |
-| gh | 2.98.0 | Two logins: `NextLED` (active) and `hezrie`, both with `repo` + `workflow` scopes. |
-| jq | 1.7.1 | ✓ (also preinstalled on GitHub runners) |
-| claude CLI | not on PATH | Only needed for **you** to run `claude setup-token` (Phase 7). |
+| Tool       | Found       | Notes                                                                              |
+| ---------- | ----------- | ---------------------------------------------------------------------------------- |
+| node       | v24.15.0    | Node 24 is Active LTS today. Pin `24` in `.nvmrc` and `engines: ">=24 <25"`.       |
+| npm        | 11.12.1     | ✓                                                                                  |
+| git        | 2.50.1      | No global identity configured. I'll set it repo-locally.                           |
+| gh         | 2.98.0      | Two logins: `NextLED` (active) and `hezrie`, both with `repo` + `workflow` scopes. |
+| jq         | 1.7.1       | ✓ (also preinstalled on GitHub runners)                                            |
+| claude CLI | not on PATH | Only needed for **you** to run `claude setup-token` (Phase 7).                     |
 
 Latest relevant packages: vite 8.3, vitest 5.0 (+ coverage-v8), eslint 10.12, typescript-eslint 8.71, @playwright/test 1.64, prettier 3.9, dependency-cruiser 18.5, tsx 4.23, zod 4.6.
 
@@ -63,7 +63,7 @@ Latest relevant packages: vite 8.3, vitest 5.0 (+ coverage-v8), eslint 10.12, ty
     - Bonus: the Chromium e2e test can assert the **same state hash** as the Node golden replay.
 12. **Layers are enforced by two tools.** ESLint handles banned globals and properties (`Date`, `Math.random`, `window`, `document`, `performance`, …). dependency-cruiser handles the import graph. Neither tool can do both jobs.
 13. **Core's only allowed third-party dependency is `zod`**, used for the hole/course schemas validated at load. dependency-cruiser enforces this allowlist.
-14. **The integrity check catches more than the brief lists.** It also flags `.skipIf(`, `.runIf(`, `.fails(`, Playwright `.fixme(`, and `describe.skip`. To compare test counts, it runs `vitest list` + `playwright test --list` against `origin/main` in a temporary git worktree. It skips that comparison, with a notice, when no `main` exists yet.
+14. **The integrity check catches more than the brief lists, and compares counts per suite.** It also flags `.skipIf`, `.runIf`, `.fails`, Playwright `.fixme`, and `describe.skip`. Counts are compared **separately** for Vitest and Playwright, which is stricter than a combined total: you can't delete e2e tests and pad the count with unit tests. The comparison base is the merge-base with `origin/main`, or `HEAD^` when HEAD is main; it's checked out in a temporary git worktree. Vitest is counted from a real `vitest run --reporter=json` (`numTotalTests`), _not_ `vitest list`, because the list collapses each `it.each` table into one entry. Locally with no base, the count check is skipped with a warning; in CI it fails.
 15. **`rm -rf` is also allowed in other build-output dirs** (`coverage/`, `test-results/`, `playwright-report/`), not just `dist/` and `node_modules/`.
 16. **Extra label `physics-change`.** The hooks rule references it, but the label list doesn't include it.
 17. **`agent.config.json` gets three extra keys:**
@@ -97,6 +97,7 @@ Every agent workflow starts by exiting early if `vars.AGENT_PAUSED == 'true'`, a
 Every phase ends with `npm run check` green, a conventional commit (`chore(foundation): phase N — …`), and a 3-line status for you.
 
 ### Phase 1: Scaffold & tooling
+
 - Vite 8 + TS 6.0 strict (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `verbatimModuleSyntax`), `base: '/mulligan-mayhem/'`.
 - ESLint 10 flat config + typescript-eslint (type-aware) with the core purity rules; dependency-cruiser layer graph; Prettier.
 - Vitest 5 + coverage-v8, with thresholds on `src/core/**` (90% lines / 85% branches). Playwright 1.64 on Chromium, Desktop and Pixel 7 projects.
@@ -104,8 +105,19 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 - `.nvmrc`, `engines`, `.editorconfig`, `.gitignore`, `package-lock.json`.
 - **Downloads you're approving:** `npm install` (dev deps only, ~300 packages) and `npx playwright install chromium` (~170 MB from Microsoft's Playwright CDN).
 - **Exit:** `npm run check` passes on an empty-but-wired app, including a trivial e2e test.
+- **As built:**
+  - `test:e2e` builds two bundles: `dist/` (prod) and `dist-e2e/` (`--mode e2e`, with `window.__MM__`).
+  - Playwright runs `desktop` + `mobile` (Pixel 7) against `dist-e2e`, and a `prod-smoke` project against the real `dist` that asserts no `__MM__` at runtime _or_ in the bundle.
+  - A shared fixture fails any test that logs a console error.
+  - Playwright retries are 0, so flakiness surfaces instead of being hidden.
+  - Every gate was verified with throwaway probes:
+    - ESLint purity rules
+    - every depcruise layer rule
+    - the coverage threshold (fails at 60%)
+    - the integrity scan (fails on a planted focus marker)
 
 ### Phase 2: Rulebook
+
 - `CLAUDE.md` (≤150 lines). Covers the purpose, layer map, exact commands, conventions, DoR/DoD links, protected paths, escalation rules, and "how to add a hole / a terrain / a test".
 - Supporting docs:
   - `docs/GAME_DESIGN.md`, `docs/ARCHITECTURE.md`, `docs/DEFINITION_OF_READY.md`, `docs/DEFINITION_OF_DONE.md`
@@ -117,6 +129,7 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 ### Phase 3: Walking skeleton (test-first)
 
 **Core**
+
 - `math/` (vec2, deterministic trig)
 - `rng.ts` (mulberry32)
 - `physics/`:
@@ -125,13 +138,14 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
   - per-terrain constant rolling deceleration, which guarantees rest within `v_max / decel` seconds
   - restitution on walls
   - rest detection by speed threshold
-  - cup capture when the ball is over the cup *and* slower than a capture speed
+  - cup capture when the ball is over the cup _and_ slower than a capture speed
 - `course/`: zod schemas, plus `holes/skeleton-01.json`, a par 3 with a dog-leg wall so it needs a bank shot or 2–3 putts
 - `game/`: a state machine running aiming → rolling → resting | holed
 - `scoring/`: strokes, par, and the score name
 - `hash.ts`: FNV-1a over the exact float64 bits of the state
 
 **Shell**
+
 - `input/`: pointer and touch drag-back → `Shot {angle, power 0..1}`, with an aim line and power feedback
 - `render/`: canvas, read-only
 - `ui/`: stroke HUD, the "Hole complete — N strokes (Par)" screen, restart
@@ -139,6 +153,7 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 - `main.ts`: accumulator loop and nothing else
 
 **Tests**
+
 - unit tests
 - invariant tests:
   - the ball stays in bounds
@@ -151,6 +166,7 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 **Exit:** you can play it with `npm run dev`; check green.
 
 ### Phase 4: Guardrails
+
 - `.claude/settings.json`: allow/deny lists plus hooks. The hooks only enforce when `AGENT_MODE ∈ {worker, reviewer, refiner, digest}`.
 - `.claude/hooks/*.sh` (jq-based):
   - **PreToolUse `Edit|Write|MultiEdit|NotebookEdit`:** protected paths, with the `AGENT_ALLOW_GOLDEN` exception for replays
@@ -163,6 +179,7 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 - **Exit:** the hook test matrix is green; check green.
 
 ### Phase 5: CI/CD
+
 - `ci.yml` (PRs + `main`): the steps of `npm run check` in order, plus `agent-guard`, an npm + Playwright browser cache, and Playwright screenshots/report as artifacts.
 - `deploy.yml`: Pages via `actions/deploy-pages` on push to `main`.
 - **Repo setup (with your OK, given by approving this plan):**
@@ -180,6 +197,7 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 - **Exit:** a green CI run on GitHub, a successful deploy, and the URL loads and plays.
 
 ### Phase 6: Ticket system
+
 - `scripts/setup/labels.ts`: idempotent; creates or updates names, colours and descriptions.
 - `.github/ISSUE_TEMPLATE/ticket.yml` (the full DoR form), `idea.yml` (freeform, auto-labelled `status:needs-refinement`), and `config.yml`.
 - `scripts/agent/tracker/`: a `Tracker` interface plus a `github` adapter built on an injectable `gh api` client, so a Jira adapter can be added later as a ticket.
@@ -195,6 +213,7 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 - **Exit:** labels exist on GitHub; picker tests green; check green.
 
 ### Phase 7: Agent workflows
+
 - `agent-refine.yml`, `agent-worker.yml`, `agent-review.yml`, `agent-merge.yml`, `agent-close.yml`, `agent-digest.yml`, plus `.agent/prompts/{refiner,worker,worker-fix,planner,reviewer-pr,reviewer-plan,digest}.md` and `agent.config.json`.
 - Each workflow: kill-switch check → App token → deterministic pre-steps → Claude (`AGENT_MODE`, `--max-turns` and `--model` from config, narrow `--allowedTools`) → canary check → deterministic post-steps → run-log append.
 - Action pinned to `anthropics/claude-code-action@v1`, `allowed_bots` set to the App's bot login.
@@ -202,6 +221,7 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 - **Exit:** workflows lint-clean; check green; secrets confirmed present (names only).
 
 ### Phase 8: Seed backlog & dry run
+
 - Create 10–12 DoR-compliant tickets with dependencies, splitting the Daily Course generator into "seeded generator + schema" and "solvability bot + par+3 gate". Tickets 1–3 get `status:ready`; the rest get `status:proposed`.
 - Set `AGENT_PAUSED=false`, `workflow_dispatch` the worker on ticket 1 at level 1, and watch: pickup → PR → CI → review → "Ready for human merge". Fix plumbing as needed.
 - Final report (URLs, what's built, how to run, pause and raise autonomy, remaining to-dos, risks, Level 1→2→3 criteria).
@@ -209,6 +229,7 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 ## Things only you can do
 
 **Now**
+
 - [ ] Review and approve this plan. Approving also OKs:
   - the Phase 1 downloads
   - creating the public repo
@@ -217,6 +238,7 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
   - creating labels and issues
 
 **Before Phase 7 (I'll stop and walk you through it)**
+
 - [ ] **Create the GitHub App** (Settings → Developer settings → GitHub Apps → New):
   - Name: `mulligan-mayhem-agent`
   - Homepage: the repo URL
@@ -228,18 +250,21 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 - [ ] **Claude auth**, pick one:
   - install the Claude CLI, run `claude setup-token`, then `gh secret set CLAUDE_CODE_OAUTH_TOKEN`. This uses your subscription's limits.
   - or `gh secret set ANTHROPIC_API_KEY`. This is pay-per-token, with exact cost in the digest.
-- [ ] *(Optional)* Install the Claude GitHub App (https://github.com/apps/claude). It's only needed for `@claude` mentions; the loop doesn't use it.
+- [ ] _(Optional)_ Install the Claude GitHub App (https://github.com/apps/claude). It's only needed for `@claude` mentions; the loop doesn't use it.
 
 **Ongoing**
+
 - Merge PRs at Level 1, promote tickets to `status:ready`, answer `status:needs-human` questions, and merge digest PRs.
 - Family members need a GitHub account to submit ideas. Send me their handles for `trustedSubmitters`.
 
 ## Product questions that will come up later (not blocking)
+
 - Daily Course "day": UTC midnight or each player's local midnight? This matters if family spans timezones.
 - What a Mulligan does exactly: redo the last stroke, or subtract one stroke?
 - Chaos Card when the lead is tied: who gets hit?
 
 ## Known risks (tracked; mitigations in place or planned)
+
 - **Prompt injection via public issues.** Mitigated by the trust gate, read-only LLM credentials, narrow tools, and treating issue text as untrusted data.
 - **Hook regexes are best-effort.** The real walls are `agent-guard`, CODEOWNERS and the App's missing Workflows permission.
 - **Hooks silently not loading in CI.** Mitigated by the canary, which fails the run.
@@ -248,4 +273,6 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 - **Node 26 becomes LTS later this month.** It goes into the backlog as a chore.
 
 ## Changelog
+
 - 2026-10-08: Phase 0 complete. Plan written, awaiting approval.
+- 2026-10-17: Plan approved. Phase 1 complete: tooling wired, `npm run check` green (24 unit + 5 e2e tests).

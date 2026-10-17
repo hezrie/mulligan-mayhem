@@ -1,0 +1,29 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+dist-e2e/
+*.tsbuildinfo
+
+# test output
+coverage/
+test-results/
+playwright-report/
+blob-report/
+
+# agent runtime state (stamps, outputs) — never committed
+.agent/.state/
+.agent/out/
+
+# secrets — never committed, never read by agents
+.env*
+!.env.example
+secrets/
+
+# os / editor
+.DS_Store
+*.log
+.vscode/*
+!.vscode/extensions.json
+.idea/
