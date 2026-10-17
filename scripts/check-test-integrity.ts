@@ -5,7 +5,8 @@
  * Fails when:
  *  1. test code contains a focus/skip/todo/expected-failure marker, or
  *  2. the Vitest or Playwright test count is lower than at the comparison base. The base is the
- *     merge-base with origin/main, or the parent commit when HEAD already is main.
+ *     merge-base with origin/main, or the parent commit when HEAD already is main;
+ *  3. config that must agree across files has drifted (scripts/agent/config-sync.ts).
  */
 import { execFileSync } from 'node:child_process';
 import {
@@ -20,6 +21,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { checkConfigSync } from './agent/config-sync.ts';
 
 export interface Violation {
   file: string;
@@ -177,6 +179,14 @@ function main(): void {
       console.error(`  ${v.file}:${String(v.line)}  ${v.marker}  ${v.text.trim()}`);
   } else {
     console.log(`✔ No focus/skip/todo markers in ${String(files.length)} test files`);
+  }
+
+  const drift = checkConfigSync(process.cwd());
+  if (drift.length > 0) {
+    failed = true;
+    for (const d of drift) console.error(`✖ Config drift: ${d}`);
+  } else {
+    console.log('✔ CI steps, npm run check and agent config are in sync');
   }
 
   const scratch = mkdtempSync(join(tmpdir(), 'mm-integrity-'));

@@ -1,0 +1,45 @@
+# agent-guard: fails agent PRs (head branch agent/*) that touch protected paths or change existing
+# golden replays without `physics-change`. The guard script and the protected-path list come from
+# a checkout of the BASE commit, so a PR can't weaken the check that judges it. PROTECTED.
+name: Agent Guard
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  agent-guard:
+    name: agent-guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out the PR
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check out the trusted base commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .trusted
+          sparse-checkout: |
+            scripts/agent
+            agent.config.json
+            .nvmrc
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .trusted/.nvmrc
+
+      - name: Guard protected paths
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          TRUSTED_DIR: .trusted
+        run: node .trusted/scripts/agent/agent-guard.ts
