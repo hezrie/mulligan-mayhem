@@ -1,0 +1,16 @@
+{
+  "description": "Hole in one on The Dog-Leg: bank off the left boundary wall through the gap and into the cup.",
+  "holeId": "skeleton-01",
+  "seed": 1,
+  "shots": [
+    {
+      "angle": -2.481,
+      "power": 0.925
+    }
+  ],
+  "expected": {
+    "strokes": 1,
+    "holed": true,
+    "finalStateHash": "33265a5c2ff5d8ae"
+  }
+}

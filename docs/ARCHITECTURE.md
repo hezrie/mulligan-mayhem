@@ -36,25 +36,40 @@ tested headlessly**, so CI, not an agent's opinion, decides whether a change wor
 
 ## Core modules
 
-| Module                      | Responsibility                                                      |
-| --------------------------- | ------------------------------------------------------------------- |
-| `core/math/vec2.ts`         | Immutable 2D vectors                                                |
-| `core/math/geometry.ts`     | Closest point on segment, point-in-polygon                          |
-| `core/math/trig.ts`         | Deterministic `sin`/`cos` from `+ − × ÷` only (ADR 0001)            |
-| `core/rng.ts`               | mulberry32 seeded PRNG; state lives in `GameState` so it is hashed  |
-| `core/physics/constants.ts` | Every tuning constant, named and commented                          |
-| `core/physics/terrain.ts`   | `TERRAIN_KINDS` and the `TERRAIN` parameter table                   |
-| `core/physics/collision.ts` | Circle-vs-segment detection and response                            |
-| `core/physics/step.ts`      | One fixed step of ball physics                                      |
-| `core/physics/timestep.ts`  | Real-time accumulator → number of fixed steps                       |
-| `core/course/schema.ts`     | zod `HoleSchema`; the `Hole` type is inferred from it               |
-| `core/course/holes/*.json`  | Hole data; `holes/index.ts` validates every hole at load            |
-| `core/game/shot.ts`         | `Shot { angle, power }`                                             |
-| `core/game/state.ts`        | `GameState` and `GamePhase`                                         |
-| `core/game/machine.ts`      | Pure transitions: `createGame`, `shoot`, `tick`                     |
-| `core/game/session.ts`      | `GameSession`: a small mutable wrapper used by main, tests, replays |
-| `core/scoring/score.ts`     | Score names and share-card emoji from strokes and par               |
-| `core/hash.ts`              | Stable hash of `GameState` from exact float64 bits                  |
+| Module                      | Responsibility                                                                           |
+| --------------------------- | ---------------------------------------------------------------------------------------- |
+| `core/math/vec2.ts`         | Immutable 2D vectors                                                                     |
+| `core/math/geometry.ts`     | Closest point on segment, point-in-polygon                                               |
+| `core/math/trig.ts`         | Deterministic `sin`/`cos` from `+ − × ÷` only (ADR 0001)                                 |
+| `core/rng.ts`               | mulberry32 seeded PRNG; state lives in `GameState` so it is hashed                       |
+| `core/physics/constants.ts` | Every tuning constant, named and commented                                               |
+| `core/physics/terrain.ts`   | `TERRAIN_KINDS` and the `TERRAIN` parameter table                                        |
+| `core/physics/collision.ts` | Circle-vs-segment detection and response                                                 |
+| `core/physics/step.ts`      | One fixed step of ball physics                                                           |
+| `core/physics/timestep.ts`  | Real-time accumulator → number of fixed steps                                            |
+| `core/course/schema.ts`     | zod `HoleSchema`; the `Hole` type is inferred from it                                    |
+| `core/course/holes/*.json`  | Hole data; `holes/index.ts` validates every hole at load                                 |
+| `core/game/shot.ts`         | `Shot { angle, power }`                                                                  |
+| `core/game/state.ts`        | `GameState` and `GamePhase`                                                              |
+| `core/game/machine.ts`      | Pure transitions: `createGame`, `shoot`, `tick`                                          |
+| `core/game/session.ts`      | `GameSession`: a small mutable wrapper used by main, tests, replays                      |
+| `core/game/replay.ts`       | `ReplayFileSchema` + `playReplay`: the one way replays are played (tests, recorder, e2e) |
+| `core/scoring/score.ts`     | Score names and share-card emoji from strokes and par                                    |
+| `core/hash.ts`              | Stable hash of `GameState` from exact float64 bits                                       |
+
+## Shell modules
+
+| Module                     | Responsibility                                                         |
+| -------------------------- | ---------------------------------------------------------------------- |
+| `input/drag-to-shot.ts`    | Pure slingshot maths: grab radius, drag → `Shot`, cancel threshold     |
+| `input/pointer.ts`         | Pointer events (mouse, touch, pen) → aim preview and shots             |
+| `render/view.ts`           | Fit the hole into the canvas; world ↔ screen transforms                |
+| `render/palette.ts`        | Colours; one per terrain kind (TypeScript forces new kinds to add one) |
+| `render/renderer.ts`       | Draws a frame; keeps the backing store matched to CSS size × dpr       |
+| `ui/hud.ts`                | Hole name, par, strokes, restart button                                |
+| `ui/complete-screen.ts`    | "Hole complete — N strokes (Label)" dialog with Play again             |
+| `testing/api.ts`           | `window.__MM__` (dev/test/e2e builds only)                             |
+| `scripts/record-replay.ts` | `npm run replay:record`: fills a new replay's `expected` block         |
 
 ## Simulation
 
@@ -111,6 +126,14 @@ bits, into a 16-hex-digit FNV-1a hash.
 ## Hole schema (`core/course/schema.ts`)
 
 Holes are JSON data, validated by zod when the module loads. An invalid hole fails the test suite.
+On top of field types, validation enforces several layout rules:
+
+- unknown fields are rejected, which catches typos
+- all geometry lies within `size`
+- tee and cup are inside `boundary`
+- the tee is more than a ball radius from every wall
+- the cup is clear of every wall, so the ball can reach it
+- walls have non-zero length
 
 | Field      | Type                                   | Notes                                         |
 | ---------- | -------------------------------------- | --------------------------------------------- |
@@ -145,6 +168,7 @@ Holes are JSON data, validated by zod when the module loads. An invalid hole fai
 | `fastForward(ms \| 'untilRest')` | Runs fixed steps synchronously; returns the number of steps run                 |
 | `getState()`                     | A copy of `GameState`                                                           |
 | `getStateHash()`                 | `hashState(state)`: equal to the Node golden replay for the same shots          |
+| `getBallClientPosition()`        | The ball's position in client pixels, for real pointer-input tests              |
 
 `__TEST_API__` is `false` in production builds, so the bundler removes the code entirely. The
 `prod-smoke` e2e project checks both the runtime and the shipped bundle.

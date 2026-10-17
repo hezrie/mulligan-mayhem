@@ -9,7 +9,7 @@
 | 0     | Recon & plan           | ✅ Approved 2026-10-17            |
 | 1     | Scaffold & tooling     | ✅ Done                           |
 | 2     | Rulebook               | ✅ Done                           |
-| 3     | Walking skeleton       | ⏳                                |
+| 3     | Walking skeleton       | ✅ Done                           |
 | 4     | Guardrails             | ⏳                                |
 | 5     | CI/CD + repo + Pages   | ⏳                                |
 | 6     | Ticket system          | ⏳                                |
@@ -183,6 +183,34 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 
 **Exit:** you can play it with `npm run dev`; check green.
 
+- **As built:**
+  - **Hole.** `skeleton-01` "The Dog-Leg" (par 3). An interior wall blocks the direct line, so you lay up through the left gap, or bank a hole in one off the left wall.
+  - **Physics.** Max shot speed 800 u/s, fairway deceleration 360 u/s², cup capture ≤ 280 u/s, wall restitution 0.8.
+  - **Golden replays (3).** A hole in one (bank shot), a par, and a wall-bank bogey whose first shot rebounds off the interior wall. Shots were found by a solver that runs the real core.
+  - **Invariants.**
+    - 600 random shots across two holes, including a concave "pinball" fixture, plus 80 multi-shot games.
+    - Measured: 581 wall bounces.
+    - Worst penetration 1e-14 (gate: 1e-9).
+    - Slowest roll 223 steps (bound: 268).
+    - Speed never increased.
+  - **E2E (19).**
+    - par and hole-in-one replays in Chromium produce **the same hash as Node**
+    - completion screen
+    - Play again
+    - a real mouse drag shoots the opposite way
+    - a release on the ball cancels
+    - the real-time rAF loop plays a shot out
+    - the course fits the viewport
+    - prod has no test API
+  - **Coverage.** 193 unit tests; core 100% lines / 96.9% branches.
+  - **Bug found and fixed:** the canvas measured itself before the HUD was inserted, so the course overflowed the viewport. Fixed with a `minmax(0, 1fr)` grid row and a `ResizeObserver`; an e2e test now guards it.
+  - **Extras beyond the brief:**
+    - `__MM__.getBallClientPosition()`, for real-input tests
+    - `npm run replay:record`, which refuses to overwrite without `--update`
+    - a test that every registered hole has a replay proving it solvable within par + 3
+    - `.claude/launch.json` for a one-click dev preview
+  - **Note:** the desktop app's browser pane throttles rAF to 1 fps when it isn't on screen, and the per-frame clamp then makes the game run at ¼ speed there. Real devices run rAF at 60–120 Hz.
+
 ### Phase 4: Guardrails
 
 - `.claude/settings.json`: allow/deny lists plus hooks. The hooks only enforce when `AGENT_MODE ∈ {worker, reviewer, refiner, digest}`.
@@ -295,3 +323,4 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 - 2026-10-08: Phase 0 complete. Plan written, awaiting approval.
 - 2026-10-17: Plan approved. Phase 1 complete: tooling wired, `npm run check` green (24 unit + 5 e2e tests).
 - 2026-10-17: Phase 2 complete: rulebook + 6 docs + ADR 0001 + lessons file; doc tests added.
+- 2026-10-17: Phase 3 complete: playable par-3 walking skeleton, 193 unit/invariant/replay tests, 19 e2e tests; Node and Chromium hashes match.

@@ -4,35 +4,114 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#1f5f2a" />
+    <meta name="description" content="Mulligan Mayhem — a mini-golf party game." />
     <link rel="icon" href="data:," />
     <title>Mulligan Mayhem</title>
     <style>
+      :root {
+        --bg: #1f5f2a;
+        --ink: #ffffff;
+        --panel: rgba(10, 30, 14, 0.82);
+        --accent: #ffe066;
+      }
       html,
       body {
         margin: 0;
         height: 100%;
-        background: #1f5f2a;
-        color: #fff;
-        font-family: system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+        font-family:
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
         overscroll-behavior: none;
+        -webkit-user-select: none;
+        user-select: none;
       }
       #app {
-        position: relative;
+        position: fixed;
+        inset: 0;
         display: grid;
-        place-items: center;
-        height: 100%;
+        /* minmax(0, …): the canvas's backing-store size must never prop the row open. */
+        grid-template-rows: auto minmax(0, 1fr);
+        overflow: hidden;
       }
       #game {
+        grid-row: 2;
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+        display: block;
         touch-action: none;
-        max-width: 100%;
-        max-height: 100%;
+      }
+      .hud {
+        grid-row: 1;
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+        justify-content: center;
+        padding: max(env(safe-area-inset-top), 0.5rem) 1rem 0.5rem;
+        background: var(--panel);
+        font-size: 1rem;
+      }
+      .hud-hole {
+        font-weight: 600;
+      }
+      .hud b {
+        color: var(--accent);
+      }
+      .hud button,
+      .complete button {
+        font: inherit;
+        color: var(--ink);
+        background: transparent;
+        border: 2px solid var(--ink);
+        border-radius: 999px;
+        cursor: pointer;
+      }
+      .hud button {
+        width: 2.25rem;
+        height: 2.25rem;
+        font-size: 1.1rem;
+      }
+      .complete {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-content: center;
+        gap: 1.25rem;
+        text-align: center;
+        background: rgba(0, 0, 0, 0.55);
+      }
+      .complete[hidden] {
+        display: none;
+      }
+      .complete h2 {
+        margin: 0;
+        padding: 1rem 1.5rem;
+        background: var(--panel);
+        border-radius: 1rem;
+        font-size: 1.5rem;
+      }
+      .complete button {
+        justify-self: center;
+        padding: 0.75rem 1.75rem;
+        font-size: 1.1rem;
+        font-weight: 600;
+        background: var(--accent);
+        color: #1b1b1b;
+        border-color: var(--accent);
       }
     </style>
   </head>
   <body>
-    <div id="app">
-      <canvas id="game" width="360" height="640" aria-label="Mini-golf course"></canvas>
-    </div>
+    <main id="app">
+      <canvas
+        id="game"
+        aria-label="Mini-golf hole. Drag back from the ball to aim, release to shoot."
+      ></canvas>
+    </main>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

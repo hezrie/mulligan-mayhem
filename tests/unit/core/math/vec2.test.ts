@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { add, dot, length, scale, sub, vec2 } from '../../../../src/core/math/vec2.ts';
+import {
+  add,
+  distance,
+  dot,
+  length,
+  lengthSq,
+  normalize,
+  perp,
+  scale,
+  sub,
+  vec2,
+  ZERO,
+} from '../../../../src/core/math/vec2.ts';
 
 describe('vec2', () => {
   it('constructs a vector from components', () => {
@@ -23,6 +35,22 @@ describe('vec2', () => {
   it('computes the euclidean length', () => {
     expect(length(vec2(3, 4))).toBe(5);
     expect(length(vec2(0, 0))).toBe(0);
+  });
+
+  it('computes squared length and distance', () => {
+    expect(lengthSq(vec2(3, 4))).toBe(25);
+    expect(distance(vec2(1, 1), vec2(4, 5))).toBe(5);
+  });
+
+  it('normalizes to unit length and maps the zero vector to zero', () => {
+    expect(normalize(vec2(0, -5))).toEqual({ x: 0, y: -1 });
+    expect(length(normalize(vec2(3, 4)))).toBeCloseTo(1, 15);
+    expect(normalize(ZERO)).toEqual(ZERO);
+  });
+
+  it('rotates a quarter turn with perp (toward +y for +x in screen space)', () => {
+    expect(perp(vec2(1, 0))).toEqual({ x: -0, y: 1 });
+    expect(dot(perp(vec2(2, 3)), vec2(2, 3))).toBe(0);
   });
 
   it('never mutates its inputs', () => {

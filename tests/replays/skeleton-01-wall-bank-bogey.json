@@ -1,0 +1,28 @@
+{
+  "description": "Bogey on The Dog-Leg: the first shot rebounds off the interior wall, then lay-up, approach and putt.",
+  "holeId": "skeleton-01",
+  "seed": 1,
+  "shots": [
+    {
+      "angle": -1.4,
+      "power": 0.7
+    },
+    {
+      "angle": -2.414014,
+      "power": 0.612149
+    },
+    {
+      "angle": -1.008538,
+      "power": 0.490586
+    },
+    {
+      "angle": -1.008539,
+      "power": 0.342373
+    }
+  ],
+  "expected": {
+    "strokes": 4,
+    "holed": true,
+    "finalStateHash": "f1904c98d9da4811"
+  }
+}

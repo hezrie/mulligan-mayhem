@@ -1,9 +1,22 @@
+import type { GameState } from '../core/game/state.ts';
+import type { Vec2 } from '../core/math/vec2.ts';
+
 /**
- * Shape of the test API exposed as `window.__MM__` in dev/test/e2e builds only.
- * Phase 3 extends this with loadHole / shoot / fastForward / getState / getStateHash.
+ * The test API exposed as `window.__MM__` in dev/test/e2e builds only (never in production).
+ * Playwright drives the game through it deterministically; see docs/ARCHITECTURE.md.
  */
 export interface MulliganTestApi {
   readonly ready: true;
+  /** Loads a hole and switches to a manual clock, so only fastForward advances time. */
+  loadHole(id: string, seed?: number): void;
+  /** Takes a shot exactly like a player would. Throws unless the phase is 'aiming'. */
+  shoot(angle: number, power: number): void;
+  /** Runs fixed steps synchronously: a duration in ms, or until the ball stops. Returns steps run. */
+  fastForward(duration: number | 'untilRest'): number;
+  getState(): GameState;
+  getStateHash(): string;
+  /** Where the ball is on screen, in client pixels (for real pointer-input tests). */
+  getBallClientPosition(): Vec2;
 }
 
 declare global {

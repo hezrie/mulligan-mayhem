@@ -1,0 +1,16 @@
+{
+  "id": "skeleton-01",
+  "name": "The Dog-Leg",
+  "par": 3,
+  "size": { "width": 320, "height": 560 },
+  "boundary": [
+    { "x": 0, "y": 0 },
+    { "x": 320, "y": 0 },
+    { "x": 320, "y": 560 },
+    { "x": 0, "y": 560 }
+  ],
+  "walls": [{ "a": { "x": 110, "y": 300 }, "b": { "x": 320, "y": 300 } }],
+  "tee": { "x": 240, "y": 490 },
+  "cup": { "x": 220, "y": 110 },
+  "terrain": { "base": "fairway", "zones": [] }
+}

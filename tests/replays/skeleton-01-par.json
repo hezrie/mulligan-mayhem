@@ -1,0 +1,24 @@
+{
+  "description": "Par on The Dog-Leg: lay up through the left gap, approach toward the cup, then putt in.",
+  "holeId": "skeleton-01",
+  "seed": 1,
+  "shots": [
+    {
+      "angle": -2.207867,
+      "power": 0.591508
+    },
+    {
+      "angle": -0.676676,
+      "power": 0.421065
+    },
+    {
+      "angle": -0.676676,
+      "power": 0.309579
+    }
+  ],
+  "expected": {
+    "strokes": 3,
+    "holed": true,
+    "finalStateHash": "1d258a90f3231d00"
+  }
+}

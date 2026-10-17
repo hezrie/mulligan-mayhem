@@ -21,6 +21,7 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "npm run build && npm run build:e2e && playwright test",
     "check:integrity": "tsx scripts/check-test-integrity.ts",
+    "replay:record": "tsx scripts/record-replay.ts",
     "check": "npm run typecheck && npm run lint && npm run test:coverage && npm run check:integrity && npm run build && npm run test:e2e"
   },
   "devDependencies": {
@@ -38,5 +39,8 @@
     "typescript-eslint": "^8.71.2",
     "vite": "^8.3.4",
     "vitest": "^5.0.5"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
   }
 }
