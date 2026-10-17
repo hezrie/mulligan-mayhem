@@ -6,6 +6,7 @@ import type {
   PullRequest,
   ReviewDecision,
   Ticket,
+  TicketPatch,
   Tracker,
 } from './types.ts';
 
@@ -28,34 +29,63 @@ interface RestComment {
   created_at: string;
 }
 
+interface GqlActor {
+  login: string;
+  __typename: string;
+}
+
 interface GqlPullRequests {
   repository: {
     pullRequests: {
+      pageInfo: { hasNextPage: boolean; endCursor: string | null };
       nodes: {
         number: number;
         title: string;
         headRefName: string;
         isDraft: boolean;
+        isCrossRepository: boolean;
         createdAt: string;
         reviewDecision: ReviewDecision;
+        author: GqlActor | null;
         labels: { nodes: { name: string }[] };
         closingIssuesReferences: { nodes: { number: number }[] };
+        commits: { nodes: { commit: { committedDate: string } }[] };
+        latestOpinionatedReviews: {
+          nodes: {
+            state: string;
+            submittedAt: string | null;
+            authorAssociation: string;
+            author: GqlActor | null;
+          }[];
+        };
       }[];
     };
   };
 }
 
-const OPEN_PRS = `query($owner: String!, $name: String!) {
+const OPEN_PRS = `query($owner: String!, $name: String!, $after: String) {
   repository(owner: $owner, name: $name) {
-    pullRequests(states: OPEN, first: 50, orderBy: { field: CREATED_AT, direction: ASC }) {
+    pullRequests(states: OPEN, first: 50, after: $after, orderBy: { field: CREATED_AT, direction: ASC }) {
+      pageInfo { hasNextPage endCursor }
       nodes {
-        number title headRefName isDraft createdAt reviewDecision
+        number title headRefName isDraft isCrossRepository createdAt reviewDecision
+        author { login __typename }
         labels(first: 30) { nodes { name } }
         closingIssuesReferences(first: 10) { nodes { number } }
+        commits(last: 1) { nodes { commit { committedDate } } }
+        latestOpinionatedReviews(first: 20) { nodes { state submittedAt authorAssociation author { login __typename } } }
       }
     }
   }
 }`;
+
+/** GraphQL drops the "[bot]" suffix that REST logins carry; normalize to the REST form. */
+export function restLogin(actor: GqlActor | null): string {
+  if (!actor) return 'ghost';
+  return actor.__typename === 'Bot' && !actor.login.endsWith('[bot]')
+    ? `${actor.login}[bot]`
+    : actor.login;
+}
 
 export function toTicket(issue: RestIssue): Ticket {
   return {
@@ -89,16 +119,38 @@ export class GitHubTracker implements Tracker {
     );
   }
 
+  /**
+   * A reference that doesn't resolve (typo, deleted or transferred issue) counts as open, so the
+   * ticket shows as blocked instead of one bad "Blocked by #N" failing every picker run.
+   */
   async issueStates(numbers: readonly number[]): Promise<Map<number, 'open' | 'closed'>> {
     const states = new Map<number, 'open' | 'closed'>();
-    for (const n of new Set(numbers)) states.set(n, (await this.getTicket(n)).state);
+    for (const n of new Set(numbers)) {
+      try {
+        states.set(n, (await this.getTicket(n)).state);
+      } catch (error) {
+        if (!(error instanceof GhApiError) || ![404, 410].includes(error.status ?? 0)) throw error;
+        states.set(n, 'open');
+      }
+    }
     return states;
   }
 
   async listOpenPullRequests(): Promise<PullRequest[]> {
     const [owner = '', name = ''] = this.repo.split('/');
-    const data = await this.gh.graphql<GqlPullRequests>(OPEN_PRS, { owner, name });
-    return data.repository.pullRequests.nodes.map((pr) => ({
+    const nodes: GqlPullRequests['repository']['pullRequests']['nodes'] = [];
+    let after: string | null = null;
+    do {
+      const page: GqlPullRequests = await this.gh.graphql<GqlPullRequests>(OPEN_PRS, {
+        owner,
+        name,
+        after,
+      });
+      nodes.push(...page.repository.pullRequests.nodes);
+      const { hasNextPage, endCursor } = page.repository.pullRequests.pageInfo;
+      after = hasNextPage ? endCursor : null;
+    } while (after);
+    return nodes.map((pr) => ({
       number: pr.number,
       title: pr.title,
       headRef: pr.headRefName,
@@ -107,6 +159,16 @@ export class GitHubTracker implements Tracker {
       reviewDecision: pr.reviewDecision,
       labels: pr.labels.nodes.map((l) => l.name),
       closesIssues: pr.closingIssuesReferences.nodes.map((i) => i.number),
+      author: restLogin(pr.author),
+      isCrossRepository: pr.isCrossRepository,
+      lastCommitAt: pr.commits.nodes[0]?.commit.committedDate ?? null,
+      // Opinionated = approve / request changes: a later plain comment doesn't hide a request.
+      latestReviews: pr.latestOpinionatedReviews.nodes.map((r) => ({
+        author: restLogin(r.author),
+        authorAssociation: r.authorAssociation,
+        state: r.state,
+        submittedAt: r.submittedAt,
+      })),
     }));
   }
 
@@ -162,5 +224,24 @@ export class GitHubTracker implements Tracker {
 
   async comment(number: number, body: string): Promise<void> {
     await this.gh.rest('POST', `repos/${this.repo}/issues/${String(number)}/comments`, { body });
+  }
+
+  async updateTicket(number: number, patch: TicketPatch): Promise<void> {
+    const body: Record<string, string> = {};
+    if (patch.title !== undefined) body['title'] = patch.title;
+    if (patch.body !== undefined) body['body'] = patch.body;
+    if (patch.state !== undefined) body['state'] = patch.state;
+    if (patch.stateReason !== undefined) body['state_reason'] = patch.stateReason;
+    await this.gh.rest('PATCH', `repos/${this.repo}/issues/${String(number)}`, body);
+  }
+
+  async listTicketsByLabel(label: string): Promise<Ticket[]> {
+    const issues = await this.gh.restAll<RestIssue>(
+      `repos/${this.repo}/issues?state=all&per_page=100&labels=${encodeURIComponent(label)}`,
+    );
+    return issues
+      .filter((i) => i.pull_request === undefined)
+      .map(toTicket)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 }

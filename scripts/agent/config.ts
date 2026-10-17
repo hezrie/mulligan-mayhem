@@ -24,6 +24,8 @@ export const AgentConfigSchema = z.strictObject({
   workflowTimeoutMinutes: PerRole(z.int().min(1)),
   trustedSubmitters: z.array(z.string().regex(/^[A-Za-z0-9-]+$/)),
   protectedPaths: z.array(z.string().min(1)).min(1),
+  /** Never in a git diff (so not in CODEOWNERS/agent-guard), but agents must not touch them. */
+  workspaceProtectedPaths: z.array(z.string().min(1)),
   goldenPaths: z.array(z.string().min(1)),
 });
 

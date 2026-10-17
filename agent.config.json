@@ -1,22 +1,53 @@
 {
   "autonomyLevel": 1,
-  "autoMergeSizes": { "1": [], "2": ["S"], "3": ["S", "M"] },
+  "autoMergeSizes": {
+    "1": [],
+    "2": ["S"],
+    "3": ["S", "M"]
+  },
   "wipLimit": 1,
   "maxTicketsStartedPerDay": 6,
   "maxAttemptsPerTicket": 2,
   "maxAgentProposedTicketsPerDay": 3,
-  "maxTurns": { "refiner": 20, "worker": 80, "reviewer": 30, "digest": 30 },
+  "maxTurns": {
+    "refiner": 20,
+    "worker": 80,
+    "reviewer": 30,
+    "digest": 30
+  },
   "workerCron": "0 */2 * * *",
   "architectureReviewEveryNMerges": 10,
-  "models": { "refiner": "sonnet", "worker": "opus", "reviewer": "opus", "digest": "sonnet" },
-  "workflowTimeoutMinutes": { "refiner": 15, "worker": 60, "reviewer": 20, "digest": 20 },
+  "models": {
+    "refiner": "sonnet",
+    "worker": "opus",
+    "reviewer": "opus",
+    "digest": "sonnet"
+  },
+  "workflowTimeoutMinutes": {
+    "refiner": 15,
+    "worker": 60,
+    "reviewer": 20,
+    "digest": 20
+  },
   "trustedSubmitters": [],
   "protectedPaths": [
     ".github/**",
     ".claude/**",
     ".agent/prompts/**",
     ".agent/LESSONS.md",
+    ".mcp.json",
+    ".claude.json",
+    "CLAUDE.local.md",
+    "**/CLAUDE.md",
+    "**/CLAUDE.local.md",
+    "**/.claude/**",
+    "**/.claude",
+    ".husky/**",
+    ".gitmodules",
+    ".ripgreprc",
     ".gitignore",
+    ".gitattributes",
+    "**/.gitattributes",
     "CLAUDE.md",
     "PLAN.md",
     "agent.config.json",
@@ -24,7 +55,15 @@
     "scripts/setup/**",
     "scripts/check-test-integrity.ts",
     "package.json",
+    "**/package.json",
     "package-lock.json",
+    ".npmrc",
+    "**/.npmrc",
+    ".yarnrc",
+    ".yarnrc.yml",
+    "node_modules/**",
+    "**/node_modules/**",
+    "**/node_modules",
     ".nvmrc",
     "tsconfig*.json",
     "vite.config.ts",
@@ -37,7 +76,9 @@
     "e2e/fixtures.ts",
     "docs/DEFINITION_OF_READY.md",
     "docs/DEFINITION_OF_DONE.md",
-    "docs/decisions/**"
+    "docs/decisions/**",
+    ".agent/.state/**"
   ],
-  "goldenPaths": ["tests/replays/**"]
+  "goldenPaths": ["tests/replays/**"],
+  "workspaceProtectedPaths": [".git/**"]
 }

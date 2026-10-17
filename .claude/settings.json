@@ -59,7 +59,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PROJECT_DIR}/.claude/hooks/session-start.sh\""
+            "command": "[ -z \"${AGENT_MODE:-}\" ] || \"${CLAUDE_PROJECT_DIR}/.claude/hooks/session-start.sh\" || exit 2"
           }
         ]
       }
@@ -70,14 +70,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PROJECT_DIR}/.claude/hooks/protect-paths.sh\""
+            "command": "[ -z \"${AGENT_MODE:-}\" ] || \"${CLAUDE_PROJECT_DIR}/.claude/hooks/protect-paths.sh\" || exit 2"
           }
         ]
       },
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "\"${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-bash.sh\"" }
+          {
+            "type": "command",
+            "command": "[ -z \"${AGENT_MODE:-}\" ] || \"${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-bash.sh\" || exit 2"
+          }
         ]
       }
     ],
@@ -86,7 +89,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PROJECT_DIR}/.claude/hooks/require-check.sh\""
+            "command": "[ -z \"${AGENT_MODE:-}\" ] || \"${CLAUDE_PROJECT_DIR}/.claude/hooks/require-check.sh\" || exit 2"
           }
         ]
       }

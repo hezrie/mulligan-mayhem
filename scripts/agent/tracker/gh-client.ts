@@ -20,9 +20,10 @@ export class GhApiError extends Error {
   }
 }
 
-function gh(args: string[], input?: string): Promise<string> {
+function gh(args: string[], input?: string, envOverride?: Record<string, string>): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = execFile('gh', args, { maxBuffer: 64 * 1024 * 1024 }, (error, stdout, stderr) => {
+    const options = { maxBuffer: 64 * 1024 * 1024, env: { ...process.env, ...envOverride } };
+    const child = execFile('gh', args, options, (error, stdout, stderr) => {
       if (!error) {
         resolve(stdout);
         return;
@@ -39,28 +40,31 @@ function gh(args: string[], input?: string): Promise<string> {
   });
 }
 
-export function execGhClient(): GhClient {
+/** A GhClient backed by the `gh` CLI. `env` overrides e.g. GH_TOKEN (to act as another identity). */
+export function execGhClient(env?: Record<string, string>): GhClient {
   return {
     async rest<T>(method: HttpMethod, path: string, body?: unknown): Promise<T> {
       const args = ['api', '-X', method, path, '-H', 'Accept: application/vnd.github+json'];
       const out =
         body === undefined
-          ? await gh(args)
-          : await gh([...args, '--input', '-'], JSON.stringify(body));
+          ? await gh(args, undefined, env)
+          : await gh([...args, '--input', '-'], JSON.stringify(body), env);
       return (out.trim() ? JSON.parse(out) : null) as T;
     },
     async restAll<T>(path: string): Promise<T[]> {
-      const out = await gh(['api', '--paginate', '--slurp', path]);
+      const out = await gh(['api', '--paginate', '--slurp', path], undefined, env);
       return (JSON.parse(out) as T[][]).flat();
     },
     async graphql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
       const out = await gh(
         ['api', 'graphql', '--input', '-'],
         JSON.stringify({ query, variables }),
+        env,
       );
       const parsed = JSON.parse(out) as { data: T; errors?: { message: string }[] };
-      if (parsed.errors?.length)
+      if (parsed.errors?.length) {
         throw new GhApiError(parsed.errors.map((e) => e.message).join('; '), null);
+      }
       return parsed.data;
     },
   };

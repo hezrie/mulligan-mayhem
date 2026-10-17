@@ -1,0 +1,217 @@
+# Agent Digest: weekly metrics issue and, if failures recurred, a PR proposing CLAUDE.md /
+# LESSONS.md updates for the owner to merge.
+#   report (trusted, App token)  metrics + autonomy recommendation; failures context as data
+#   llm    (LLM, NO App token)   proposes rulebook edits; only the two files are handed on
+#   pr     (trusted, App token)  fresh checkout; copies ONLY CLAUDE.md and LESSONS.md; opens the PR
+# PROTECTED.
+name: Agent Digest
+
+on:
+  schedule:
+    - cron: '0 7 * * 1' # Mondays 07:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-digest
+  cancel-in-progress: false
+
+jobs:
+  report:
+    if: vars.AGENT_PAUSED != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      digest_issue: ${{ steps.report.outputs.digest_issue }}
+      has_failures: ${{ steps.report.outputs.has_failures }}
+      started_at: ${{ steps.t.outputs.started_at }}
+    steps:
+      - name: Record start time
+        id: t
+        run: echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Mint the bot App token
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+
+      - name: Weekly metrics issue
+        id: report
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+        run: npx tsx scripts/agent/cli.ts digest-report
+
+      - name: Hand the failure context (as data) to the llm job
+        if: steps.report.outputs.has_failures == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: digest-context
+          path: .agent/out/digest-context.md
+          include-hidden-files: true
+          retention-days: 3
+
+  llm:
+    needs: report
+    # Re-checked here: the kill switch may have been pulled while the report ran.
+    if: vars.AGENT_PAUSED != 'true' && needs.report.outputs.has_failures == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      hooks_loaded: ${{ steps.canary.outputs.loaded }}
+      turns: ${{ steps.stats.outputs.turns }}
+      cost_usd: ${{ steps.stats.outputs.cost_usd }}
+      duration_sec: ${{ steps.stats.outputs.duration_sec }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Receive the failure context
+        uses: actions/download-artifact@v8
+        with:
+          name: digest-context
+          path: .agent/out/
+
+      - name: Load config and prompt
+        id: prep
+        run: |
+          bash .claude/hooks/stamp-check.sh session
+          npx tsx scripts/agent/cli.ts config --role digest
+          npx tsx scripts/agent/cli.ts prompt --name digest
+
+      - name: Run Claude (digest)
+        id: claude
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        env:
+          AGENT_MODE: digest
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          allowed_bots: ${{ vars.AGENT_APP_SLUG }}
+          settings: '{"env":{"AGENT_MODE":"digest"}}'
+          prompt: ${{ steps.prep.outputs.text }}
+          claude_args: |
+            --model ${{ steps.prep.outputs.model }}
+            --max-turns ${{ steps.prep.outputs.max_turns }}
+            --allowedTools "Read,Glob,Grep,LS,Edit,Write"
+            --disallowedTools "Bash,WebFetch,WebSearch,NotebookEdit"
+
+      - name: Verify the guardrails were active
+        if: always()
+        id: canary
+        run: |
+          if grep -q '^digest ' .agent/.state/hooks-active 2>/dev/null; then
+            echo "loaded=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "loaded=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Guardrail hooks did not load for the digest; no PR will be opened."
+          fi
+
+      - name: Execution stats
+        if: always()
+        id: stats
+        env:
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: npx tsx scripts/agent/cli.ts exec-stats
+
+      - name: Package only the two rulebook files
+        if: always()
+        run: |
+          mkdir -p result/.agent
+          cp CLAUDE.md result/CLAUDE.md
+          cp .agent/LESSONS.md result/.agent/LESSONS.md
+
+      - name: Hand the proposal to the pr job
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: digest-result
+          path: result/
+          include-hidden-files: true
+          retention-days: 3
+
+  pr:
+    needs: [report, llm]
+    if: ${{ !cancelled() && needs.llm.outputs.hooks_loaded == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Mint the bot App token
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+
+      - name: Resolve the bot identity
+        id: bot
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          SLUG: ${{ steps.app.outputs.app-slug }}
+        run: |
+          id=$(gh api "users/${SLUG}%5Bbot%5D" --jq .id)
+          echo "name=${SLUG}[bot]" >> "$GITHUB_OUTPUT"
+          echo "email=${id}+${SLUG}[bot]@users.noreply.github.com" >> "$GITHUB_OUTPUT"
+
+      - name: Receive the proposal (data only, outside the checkout)
+        uses: actions/download-artifact@v8
+        with:
+          name: digest-result
+          path: ${{ runner.temp }}/result/
+
+      - name: Open the rulebook PR (if anything changed)
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          AGENT_BOT_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          DIGEST_ISSUE: ${{ needs.report.outputs.digest_issue }}
+          EXEC_TURNS: ${{ needs.llm.outputs.turns }}
+          EXEC_COST_USD: ${{ needs.llm.outputs.cost_usd }}
+          EXEC_DURATION_SEC: ${{ needs.llm.outputs.duration_sec }}
+          STARTED_AT: ${{ needs.report.outputs.started_at }}
+          GIT_AUTHOR_NAME: ${{ steps.bot.outputs.name }}
+          GIT_AUTHOR_EMAIL: ${{ steps.bot.outputs.email }}
+          GIT_COMMITTER_NAME: ${{ steps.bot.outputs.name }}
+          GIT_COMMITTER_EMAIL: ${{ steps.bot.outputs.email }}
+        run: npx tsx scripts/agent/cli.ts digest-pr --digest-issue "$DIGEST_ISSUE" --result-dir "$RUNNER_TEMP/result"

@@ -1,0 +1,67 @@
+# Agent Merge: the merge gate (no LLM). Squash-merges only when CI is green (it waits for pending
+# checks), the reviewer approved the current head, the size is allowed at the current autonomyLevel,
+# and no protected path or golden replay is in the diff; otherwise "Ready for human merge" (once per
+# commit). Called by the reviewer after an approval, and swept hourly so approved PRs are
+# re-evaluated (e.g. after autonomyLevel changes). PROTECTED.
+name: Agent Merge
+
+on:
+  workflow_call:
+    inputs:
+      pr:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: PR number to evaluate (leave empty to sweep all approved agent PRs)
+        required: false
+        default: ''
+  schedule:
+    - cron: '23 * * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  merge:
+    if: vars.AGENT_PAUSED != 'true'
+    concurrency:
+      group: agent-merge
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      checks: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Mint the bot App token
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+
+      - name: Evaluate the merge gate
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          CHECKS_TOKEN: ${{ github.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          PR: ${{ inputs.pr }}
+        run: |
+          if [ -n "$PR" ]; then
+            npx tsx scripts/agent/cli.ts merge --pr "$PR"
+          else
+            npx tsx scripts/agent/cli.ts merge-sweep
+          fi
