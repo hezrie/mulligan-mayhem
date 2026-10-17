@@ -1,5 +1,5 @@
 {
-  "autonomyLevel": 1,
+  "autonomyLevel": 2,
   "autoMergeSizes": {
     "1": [],
     "2": ["S"],

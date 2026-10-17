@@ -14,7 +14,7 @@
 | 5     | CI/CD + repo + Pages   | ✅ Done                            |
 | 6     | Ticket system          | ✅ Done                            |
 | 7     | Agent workflows        | ✅ Done (after a security review)  |
-| 8     | Seed backlog & dry run | ✅ Done: the loop is live, level 1 |
+| 8     | Seed backlog & dry run | ✅ Done: the loop is live, level 2 |
 
 ## Decisions (Phase 0)
 
@@ -509,3 +509,4 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 - 2026-10-17: Phase 6 complete: labels live, issue forms, Tracker + GitHub adapter, picker, run log #2; protection tightened to 1 approval.
 - 2026-10-17: Phase 7 complete: six agent workflows + preflight; three adversarial passes (35 + 40 + 22 findings) led to the trusted/LLM job split, the main-only reviewer workspace and a bounded review sweep; subscription-only Claude auth; 659 unit tests.
 - 2026-10-17: Phase 8 complete: backlog #6–#17 seeded; Preflight green on real credentials; the dry run took #6 to "Ready for human merge" (PR #19) after fixing three plumbing bugs (#22, #23); the loop is live at level 1; 666 unit tests.
+- 2026-10-17: Autonomy raised to level 2 at the owner's request: approved, green `size:S` PRs merge themselves; M PRs, protected paths and golden replays still go to the owner.
