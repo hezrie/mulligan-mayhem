@@ -136,8 +136,17 @@ jobs:
         if: always()
         env:
           OUTCOME: ${{ steps.claude.outcome }}
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
         run: |
           fail=0
           if grep -q '^preflight ' .agent/.state/hooks-active 2>/dev/null; then echo "✅ Guardrail hooks loaded (canary present)" | tee -a "$GITHUB_STEP_SUMMARY"; else echo "❌ Guardrail hooks did not load" | tee -a "$GITHUB_STEP_SUMMARY"; fail=1; fi
-          if [ "$OUTCOME" = "success" ]; then echo "✅ Claude authenticated and answered" | tee -a "$GITHUB_STEP_SUMMARY"; else echo "❌ Claude run failed ($OUTCOME): check CLAUDE_CODE_OAUTH_TOKEN" | tee -a "$GITHUB_STEP_SUMMARY"; fail=1; fi
+          if [ "$OUTCOME" = "success" ]; then
+            echo "✅ Claude authenticated and answered" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            # The prompt is fixed, so its only output is the answer or the error (e.g. an invalid or
+            # expired token, usage limits). Show that one line; the action hides it by default.
+            why="$(jq -r '[.[] | select(.type == "result")] | last | .result // empty' "$EXECUTION_FILE" 2>/dev/null | head -c 300)"
+            echo "❌ Claude run failed ($OUTCOME): ${why:-no message}. Check CLAUDE_CODE_OAUTH_TOKEN." | tee -a "$GITHUB_STEP_SUMMARY"
+            fail=1
+          fi
           exit $fail
