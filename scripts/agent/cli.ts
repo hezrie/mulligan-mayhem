@@ -1282,16 +1282,29 @@ export async function cmdClose(ctx: Ctx, args: Args): Promise<void> {
   if (ticket.labels.some((l) => l.startsWith('meta:'))) return;
   for (const label of labelsToStrip(ticket.labels)) await ctx.tracker.removeLabel(issue, label);
   const closing = await ctx.prs.closingPullRequest(issue);
-  const summary = closeSummary(closing, ctx.repo);
+  // Credit the ticket's own agent PR: the one that closed it, or else (closed by a person, or by
+  // another PR whose text happened to name it) its merged agent/<N>- PR, if there is one.
+  const bot = botLogin(ctx);
+  const ownAgentPr = (pr: PrInfo): boolean =>
+    ticketOfPr(pr) === issue &&
+    pr.headRepo === ctx.repo &&
+    (bot ? pr.author === bot : pr.author.endsWith('[bot]'));
+  const closer = closing ? await ctx.prs.get(closing.number) : null;
+  const shipped =
+    closer && ownAgentPr(closer)
+      ? closer
+      : ((await ctx.prs.mergedAgentPrsSince('1970-01-01T00:00:00Z')).find(ownAgentPr) ?? null);
+  const summary = closeSummary(
+    shipped ? { number: shipped.number, title: shipped.title, url: shipped.url } : closing,
+    ctx.repo,
+  );
   if (summary) await ctx.tracker.comment(issue, summary);
-  if (!closing) return;
+  if (!shipped) return;
 
-  const pr = await ctx.prs.get(closing.number);
-  if (!pr.headRef.startsWith('agent/')) return;
   await appendRunLog(ctx, {
     role: 'closer',
     issue,
-    pr: closing.number,
+    pr: shipped.number,
     mode: 'close',
     size: sizeOf(ticket.labels),
     outcome: 'closed',
