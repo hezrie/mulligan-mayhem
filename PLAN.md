@@ -11,7 +11,7 @@
 | 2     | Rulebook               | ✅ Done                           |
 | 3     | Walking skeleton       | ✅ Done                           |
 | 4     | Guardrails             | ✅ Done                           |
-| 5     | CI/CD + repo + Pages   | ⏳                                |
+| 5     | CI/CD + repo + Pages   | ✅ Done                           |
 | 6     | Ticket system          | ⏳                                |
 | 7     | Agent workflows        | ⏳ (needs secrets from you first) |
 | 8     | Seed backlog & dry run | ⏳                                |
@@ -259,6 +259,22 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
   - variable `AGENT_PAUSED=true` (paused until Phase 8)
 - **Exit:** a green CI run on GitHub, a successful deploy, and the URL loads and plays.
 
+- **As built:**
+  - The repo was created and **configured before the first push**: squash-only merges with PR title/body, branches deleted on merge, Actions tokens read-only by default but allowed to approve PRs, Pages from Actions, `AGENT_PAUSED=true`.
+  - **First CI run on GitHub was green** (`check` + `actionlint`). The deploy fired from CI completion, and the live URL loads with no console errors and no `__MM__`. A real drag on the live build registers a stroke.
+  - **Branch protection on `main`:**
+    - required checks `check` + `agent-guard`
+    - PR required, with code-owner review and stale reviews dismissed
+    - linear history, no force pushes, no deletions
+    - `strict: false`, because WIP=1 makes "branch must be up to date" unnecessary friction
+    - `enforce_admins: false`, so you can merge your own protected-path PRs
+  - git pushes use a **repo-local** credential helper (`gh auth git-credential`), which bypasses the macOS keychain's NextLED credentials. Your global config is untouched. `gh` is now active as `hezrie`; `gh auth switch --user NextLED` switches back.
+- **Deviations:**
+  - **Deploy runs after CI succeeds on main** (`workflow_run`) rather than on every push, so a red main never ships.
+  - **`agent-guard` runs from a trusted base checkout** with plain `node` and no PR dependencies.
+  - **`actionlint` runs as an extra CI job.** It isn't required yet.
+  - **The config-sync check** keeps `ci.yml` in step with `npm run check`, and covers the worker cron from Phase 7.
+
 ### Phase 6: Ticket system
 
 - `scripts/setup/labels.ts`: idempotent; creates or updates names, colours and descriptions.
@@ -342,3 +358,4 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 - 2026-10-17: Phase 2 complete: rulebook + 6 docs + ADR 0001 + lessons file; doc tests added.
 - 2026-10-17: Phase 3 complete: playable par-3 walking skeleton, 193 unit/invariant/replay tests, 19 e2e tests; Node and Chromium hashes match.
 - 2026-10-17: Phase 4 complete: hooks + settings + config + CODEOWNERS + PR template; 320 unit tests (77 hook cases).
+- 2026-10-17: Phase 5 complete: repo live and public, CI green on GitHub, Pages deployed, branch protection applied.
