@@ -163,9 +163,15 @@ export function planReviewComment(v: PlanVerdict): string {
     .join('\n\n');
 }
 
-/** JSON Schema for claude --json-schema. Single-quote free so it can sit inside claude_args. */
+/**
+ * JSON Schema for claude --json-schema. Draft-07 with no `$schema` marker: Claude Code's validator
+ * rejects the 2020-12 dialect zod emits by default ("no schema with key or ref …"), which once
+ * made every reviewer and refiner run fail. Single-quote free so it can sit inside claude_args.
+ */
 export function jsonSchemaFor(schema: z.ZodType): string {
-  const json = JSON.stringify(z.toJSONSchema(schema));
+  const body: Record<string, unknown> = { ...z.toJSONSchema(schema, { target: 'draft-7' }) };
+  delete body['$schema'];
+  const json = JSON.stringify(body);
   if (json.includes("'")) throw new Error('schema text must not contain single quotes');
   return json;
 }

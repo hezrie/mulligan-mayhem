@@ -1,3 +1,4 @@
+import Ajv from 'ajv';
 import { describe, expect, it } from 'vitest';
 import {
   closeSummary,
@@ -22,6 +23,7 @@ import {
   PrVerdictSchema,
   type PrVerdict,
 } from '../../scripts/agent/review.ts';
+import { RefinementSchema } from '../../scripts/agent/refine.ts';
 
 const SHA = 'abc1234def';
 const green = [
@@ -144,11 +146,24 @@ describe('reviewer verdicts', () => {
   });
 
   it('exports JSON Schemas that fit inside claude_args', () => {
-    for (const schema of [PrVerdictSchema, PlanVerdictSchema]) {
+    for (const schema of [PrVerdictSchema, PlanVerdictSchema, RefinementSchema]) {
       const json = jsonSchemaFor(schema);
       expect(JSON.parse(json)).toMatchObject({ type: 'object' });
       expect(json).not.toContain("'");
     }
+  });
+
+  it('exports schemas a default (draft-07) validator accepts, as Claude Code requires', () => {
+    for (const schema of [PrVerdictSchema, PlanVerdictSchema, RefinementSchema]) {
+      const parsed = JSON.parse(jsonSchemaFor(schema)) as Record<string, unknown>;
+      expect(parsed['$schema']).toBeUndefined();
+      expect(() => new Ajv().compile(parsed)).not.toThrow();
+    }
+    // A verdict the reviewer would return validates against its own schema.
+    const validate = new Ajv().compile(
+      JSON.parse(jsonSchemaFor(PrVerdictSchema)) as Record<string, unknown>,
+    );
+    expect(validate(approve)).toBe(true);
   });
 });
 
