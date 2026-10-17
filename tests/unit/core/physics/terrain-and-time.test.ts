@@ -15,6 +15,15 @@ describe('terrain table', () => {
       expect(TERRAIN[kind].label.length).toBeGreaterThan(0);
     }
   });
+
+  it('defines rough at 2× and sand at 3× the fairway deceleration', () => {
+    expect(TERRAIN_KINDS).toContain('rough');
+    expect(TERRAIN_KINDS).toContain('sand');
+    expect(TERRAIN.rough).toEqual({ rollingDecel: 720, label: 'Rough' });
+    expect(TERRAIN.sand).toEqual({ rollingDecel: 1080, label: 'Sand' });
+    expect(TERRAIN.rough.rollingDecel).toBe(2 * TERRAIN.fairway.rollingDecel);
+    expect(TERRAIN.sand.rollingDecel).toBe(3 * TERRAIN.fairway.rollingDecel);
+  });
 });
 
 describe('constants', () => {

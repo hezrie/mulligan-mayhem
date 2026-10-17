@@ -3,6 +3,8 @@ import type { TerrainKind } from '../core/physics/terrain.ts';
 /** Every terrain kind needs a colour; TypeScript enforces this when a kind is added. */
 export const TERRAIN_COLORS: Readonly<Record<TerrainKind, string>> = {
   fairway: '#5cb85c',
+  rough: '#3e8e41',
+  sand: '#e6d3a3',
 };
 
 export const COLORS = {
