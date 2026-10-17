@@ -62,17 +62,29 @@ describe('agent workflows', () => {
     expect(claudeSteps.length).toBeGreaterThanOrEqual(5);
   });
 
-  it.each(agentWorkflows)('%s: every job honours the AGENT_PAUSED kill switch', (_file, wf) => {
-    const paused = (name: string, seen = new Set<string>()): boolean => {
-      const job = wf.jobs[name];
-      if (!job || seen.has(name)) return false;
-      seen.add(name);
-      return (
-        (job.if ?? '').includes("vars.AGENT_PAUSED != 'true'") ||
-        needsOf(job).some((n) => paused(n, seen))
-      );
-    };
-    for (const name of Object.keys(wf.jobs)) expect(paused(name), name).toBe(true);
+  // The closer runs no AI and only records closes a person made; skipping it during a pause would
+  // lose those tickets from the metrics for good (its trigger is not replayed).
+  it.each(agentWorkflows.filter(([f]) => f !== 'agent-close.yml'))(
+    '%s: every job honours the AGENT_PAUSED kill switch',
+    (_file, wf) => {
+      const paused = (name: string, seen = new Set<string>()): boolean => {
+        const job = wf.jobs[name];
+        if (!job || seen.has(name)) return false;
+        seen.add(name);
+        return (
+          (job.if ?? '').includes("vars.AGENT_PAUSED != 'true'") ||
+          needsOf(job).some((n) => paused(n, seen))
+        );
+      };
+      for (const name of Object.keys(wf.jobs)) expect(paused(name), name).toBe(true);
+    },
+  );
+
+  it('agent-close runs no LLM (which is why it may ignore the kill switch)', () => {
+    const close = workflows.find(([f]) => f === 'agent-close.yml')?.[1];
+    expect(close).toBeDefined();
+    for (const job of Object.values(close?.jobs ?? {}))
+      expect((job.steps ?? []).some(isClaude)).toBe(false);
   });
 
   it.each(agentWorkflows)('%s: top-level token permissions are read-only', (_file, wf) => {
@@ -199,6 +211,30 @@ describe('all workflows', () => {
     const prep = steps.findIndex((st) => (st.run ?? '').includes('prompt --name reviewer-pr'));
     expect(prep).toBeGreaterThan(-1);
     expect(prep).toBeLessThan(unpack); // prompt and schema come from main, before the PR lands
+  });
+
+  it('jobs downstream of a job that is skipped on most events still run (status function in if)', () => {
+    // GitHub skips a job whose ancestor was skipped unless its `if` uses a status function.
+    for (const [file, wf] of workflows) {
+      const ancestors = (name: string, seen = new Set<string>()): Set<string> => {
+        for (const n of needsOf(wf.jobs[name] ?? {})) {
+          if (seen.has(n)) continue;
+          seen.add(n);
+          ancestors(n, seen);
+        }
+        return seen;
+      };
+      const usuallySkipped = Object.entries(wf.jobs)
+        .filter(
+          ([, job]) =>
+            (job.if ?? '').includes("github.event_name == 'schedule'") && !job.if?.includes('||'),
+        )
+        .map(([name]) => name);
+      for (const name of Object.keys(wf.jobs)) {
+        if (![...ancestors(name)].some((a) => usuallySkipped.includes(a))) continue;
+        expect(wf.jobs[name]?.if ?? '', `${file}:${name}`).toMatch(/!cancelled\(\)|always\(\)/);
+      }
+    }
   });
 
   it('only the review submit job may write pull requests, and it runs no LLM', () => {

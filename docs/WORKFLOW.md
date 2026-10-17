@@ -172,7 +172,9 @@ change level, using the rules in `scripts/agent/digest.ts`:
 
 Repository variable **`AGENT_PAUSED`**. Every agent workflow checks it first and exits if it's
 `true`, and every job that runs Claude checks it again, so pulling it mid-run stops the AI from
-starting. A worker run stopped that way re-queues its ticket without counting anything.
+starting. A worker run stopped that way re-queues its ticket without counting anything. The one
+exception is the closer: it runs no AI and only records tickets you close or merge, so it keeps
+working while paused.
 
 - **Phone:** github.com → repo → Settings → Secrets and variables → Actions → **Variables** tab →
   `AGENT_PAUSED` → edit → `true`.
@@ -255,6 +257,9 @@ token can be revoked at any time with `claude setup-token` (then update the secr
   - Look at the latest **Agent Worker** summary, which shows the picker's reason, e.g. the WIP
     limit, the daily cap or the circuit breaker.
   - Scheduled workflows only run from `main`.
+- **A worker run you started by hand shows as cancelled:** GitHub keeps only one waiting run per
+  workflow, so a scheduled run that queued up behind a running worker replaced yours. Run it
+  again once the current run has finished.
 - **"Circuit breaker" in the picker summary:** three runs in a row failed for infrastructure
   reasons. Run **Preflight**, fix what it reports, then run the worker by hand once **with a ticket
   number**.

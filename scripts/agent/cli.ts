@@ -660,8 +660,9 @@ async function finishWorker(ctx: Ctx, args: Args, ticket: Ticket): Promise<void>
     });
   };
 
-  if (workResult !== 'success' && args['paused'] === 'true') {
-    // The owner pulled the kill switch before the agent ran: not a failure of any kind.
+  if (workResult === 'skipped' && args['paused'] === 'true') {
+    // The owner pulled the kill switch before the agent ran: not a failure of any kind. (A run
+    // cancelled mid-way while paused did run the agent: it takes the infra-failure path below.)
     ctx.output('outcome', 'paused');
     await setStatus(ctx, ticket, mode === 'fix' ? STATUS.inReview : STATUS.ready);
     await ctx.tracker.comment(

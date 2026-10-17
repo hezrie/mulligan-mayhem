@@ -893,6 +893,14 @@ describe('worker-finish (trusted job)', () => {
     expect(h.tracker.runLog()).toEqual([]);
   });
 
+  it('treats a run cancelled mid-way while paused as infrastructure, not as "never started"', async () => {
+    const h = ready();
+    await finish(h, { 'work-result': 'cancelled', paused: 'true' });
+    expect(h.outputs['outcome']).toBe('infra-failure');
+    expect(h.tracker.labels(12)).toContain('status:ready');
+    expect(h.tracker.runLog()[0]).toMatchObject({ outcome: 'infra-failure' });
+  });
+
   it('treats a run whose start step failed (no branch) as infrastructure, before touching git', async () => {
     const h = ready(['status:in-progress', 'size:S', 'agent:attempt-2']);
     await finish(h, { mode: 'fix', pr: '30', branch: '', 'work-result': 'skipped' });

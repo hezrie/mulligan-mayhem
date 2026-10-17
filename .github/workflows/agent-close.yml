@@ -14,8 +14,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Deliberately ignores AGENT_PAUSED: no AI runs here, it only records a close a person made
+  # (you merge every PR at level 1, pauses included). The trigger is not replayed after unpausing,
+  # so skipping it would lose the ticket from the metrics for good.
   close:
-    if: vars.AGENT_PAUSED != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
