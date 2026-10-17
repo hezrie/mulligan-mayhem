@@ -119,6 +119,12 @@ describe('stepBall on rough and sand', () => {
     expect(Math.abs(stoppingDistance('rough') - half)).toBeLessThanOrEqual(0.03 * half);
   });
 
+  it('rolls within 3% of four times the fairway distance on ice', () => {
+    // Ice at speed 400 rolls ~889 units: the box leaves ~894 before the ball touches the wall.
+    const quadruple = stoppingDistance('fairway') * 4;
+    expect(Math.abs(stoppingDistance('ice') - quadruple)).toBeLessThanOrEqual(0.03 * quadruple);
+  });
+
   it('decelerates at the sand rate only while the centre is inside a sand zone', () => {
     const sand = {
       kind: 'sand',

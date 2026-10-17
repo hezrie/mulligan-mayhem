@@ -5,6 +5,7 @@ export const TERRAIN_COLORS: Readonly<Record<TerrainKind, string>> = {
   fairway: '#5cb85c',
   rough: '#3e8e41',
   sand: '#e6d3a3',
+  ice: '#bfe6ff',
 };
 
 export const COLORS = {

@@ -17,7 +17,12 @@ import { MIN_SHOT_POWER, type Shot } from '../../src/core/game/shot.ts';
 import { hashState } from '../../src/core/hash.ts';
 import { distanceToSegment, pointInPolygon } from '../../src/core/math/geometry.ts';
 import { length } from '../../src/core/math/vec2.ts';
-import { BALL_RADIUS, DT, MAX_SHOT_SPEED } from '../../src/core/physics/constants.ts';
+import {
+  BALL_RADIUS,
+  DT,
+  MAX_ROLL_STEPS,
+  MAX_SHOT_SPEED,
+} from '../../src/core/physics/constants.ts';
 import { TERRAIN, TERRAIN_KINDS } from '../../src/core/physics/terrain.ts';
 import { Rng } from '../../src/core/rng.ts';
 
@@ -28,7 +33,9 @@ const loadFixture = (name: string): Hole =>
 const pinball = loadFixture('pinball');
 /** Rough and sand zones, so the sweep crosses every terrain boundary. */
 const bunkers = loadFixture('bunkers');
-const HOLES: Hole[] = [getHole('skeleton-01'), pinball, bunkers];
+/** Ice everywhere: the slowest-stopping terrain, with long rolls that bounce off every wall. */
+const iceRink = loadFixture('ice-rink');
+const HOLES: Hole[] = [getHole('skeleton-01'), pinball, bunkers, iceRink];
 
 const SHOTS_PER_HOLE = 300;
 const SLOWEST_DECEL = Math.min(...TERRAIN_KINDS.map((k) => TERRAIN[k].rollingDecel));
@@ -122,6 +129,21 @@ describe.each(HOLES.map((h) => [h.id, h] as const))('physics invariants on %s', 
       }
     }
   });
+});
+
+describe('full-power shots on ice', () => {
+  const course = compileCourse(iceRink);
+  const DIRECTIONS = 16;
+
+  it.each(Array.from({ length: DIRECTIONS }, (_, i) => i))(
+    'direction %i of 16 comes to rest naturally before MAX_ROLL_STEPS',
+    (i) => {
+      const shot = { angle: (i * 2 * Math.PI) / DIRECTIONS, power: 1 };
+      const report = auditRoll(new GameSession(iceRink, 1), course, shot);
+      expect(report.forcedRest).toBe(false);
+      expect(report.steps).toBeLessThan(MAX_ROLL_STEPS);
+    },
+  );
 });
 
 describe('determinism', () => {

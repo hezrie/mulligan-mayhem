@@ -24,6 +24,12 @@ describe('terrain table', () => {
     expect(TERRAIN.rough.rollingDecel).toBe(2 * TERRAIN.fairway.rollingDecel);
     expect(TERRAIN.sand.rollingDecel).toBe(3 * TERRAIN.fairway.rollingDecel);
   });
+
+  it('defines ice at one quarter of the fairway deceleration', () => {
+    expect(TERRAIN_KINDS).toContain('ice');
+    expect(TERRAIN.ice).toEqual({ rollingDecel: 90, label: 'Ice' });
+    expect(TERRAIN.ice.rollingDecel).toBe(TERRAIN.fairway.rollingDecel / 4);
+  });
 });
 
 describe('constants', () => {

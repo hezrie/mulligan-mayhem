@@ -8,6 +8,10 @@ describe('TERRAIN_COLORS', () => {
     expect(TERRAIN_COLORS).toHaveProperty('sand', '#e6d3a3');
   });
 
+  it('colours ice as specified', () => {
+    expect(TERRAIN_COLORS).toHaveProperty('ice', '#bfe6ff');
+  });
+
   it('gives every terrain kind its own distinct colour', () => {
     const colours = TERRAIN_KINDS.map((kind) => TERRAIN_COLORS[kind].toLowerCase());
     expect(new Set(colours).size).toBe(TERRAIN_KINDS.length);

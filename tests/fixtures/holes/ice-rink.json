@@ -1,0 +1,16 @@
+{
+  "id": "fixture-ice-rink",
+  "name": "Fixture: Ice Rink",
+  "par": 3,
+  "size": { "width": 400, "height": 400 },
+  "boundary": [
+    { "x": 0, "y": 0 },
+    { "x": 400, "y": 0 },
+    { "x": 400, "y": 400 },
+    { "x": 0, "y": 400 }
+  ],
+  "walls": [{ "a": { "x": 120, "y": 200 }, "b": { "x": 280, "y": 200 } }],
+  "tee": { "x": 200, "y": 300 },
+  "cup": { "x": 360, "y": 40 },
+  "terrain": { "base": "ice", "zones": [] }
+}
