@@ -4,17 +4,17 @@
 
 ## Status
 
-| Phase | Scope                  | Status                            |
-| ----- | ---------------------- | --------------------------------- |
-| 0     | Recon & plan           | ✅ Approved 2026-10-17            |
-| 1     | Scaffold & tooling     | ✅ Done                           |
-| 2     | Rulebook               | ✅ Done                           |
-| 3     | Walking skeleton       | ✅ Done                           |
-| 4     | Guardrails             | ✅ Done                           |
-| 5     | CI/CD + repo + Pages   | ✅ Done                           |
-| 6     | Ticket system          | ✅ Done                           |
-| 7     | Agent workflows        | ✅ Done (after a security review) |
-| 8     | Seed backlog & dry run | ⏳                                |
+| Phase | Scope                  | Status                             |
+| ----- | ---------------------- | ---------------------------------- |
+| 0     | Recon & plan           | ✅ Approved 2026-10-17             |
+| 1     | Scaffold & tooling     | ✅ Done                            |
+| 2     | Rulebook               | ✅ Done                            |
+| 3     | Walking skeleton       | ✅ Done                            |
+| 4     | Guardrails             | ✅ Done                            |
+| 5     | CI/CD + repo + Pages   | ✅ Done                            |
+| 6     | Ticket system          | ✅ Done                            |
+| 7     | Agent workflows        | ✅ Done (after a security review)  |
+| 8     | Seed backlog & dry run | ✅ Done: the loop is live, level 1 |
 
 ## Decisions (Phase 0)
 
@@ -429,6 +429,25 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 - Set `AGENT_PAUSED=false`, `workflow_dispatch` the worker on ticket 1 at level 1, and watch: pickup → PR → CI → review → "Ready for human merge". Fix plumbing as needed.
 - Final report (URLs, what's built, how to run, pause and raise autonomy, remaining to-dos, risks, Level 1→2→3 criteria).
 
+- **As built:**
+  - **Backlog:** `npm run setup:backlog` created #6–#17. The ready ones are #6 rough and sand terrain, #7 share-card text builder and #8 ice terrain; the rest are proposed, with dependencies. The terrain criteria were checked against a physics simulation first: "within 1%" would have failed a correct sand implementation (fixed steps make it about 1.5% off the ideal), so they use 3%.
+  - **Preflight, run for real**, found three problems, all fixed:
+    - the repo API's `permissions` field ignores GitHub App grants; Preflight now mints tokens with explicit permissions, and workflows/administration must be refused
+    - the Claude token was invalid twice: a sign-in code and a wrapped fragment were pasted. Preflight now prints Claude's error and the token's shape (prefix, length, whitespace; never the value)
+    - with a valid 108-character token, every check passes
+  - **Dry run on #6:**
+    1. The worker picked it up and opened PR #19: +181/−5 lines in 8 files, a 7-line production change plus tests, after 32 turns and 3.7 minutes. It also proposed follow-ups #20 and #21, outside the queue.
+    2. CI and agent-guard passed.
+    3. The first review failed before starting: zod 4 emits JSON Schema 2020-12, which Claude Code's validator rejects. Fixed in #22 (draft-07), with an Ajv-based test.
+    4. The second review approved after reading every test against its criterion (7 turns, 49 s).
+    5. The merge job was skipped: the new `sweep` job, an ancestor, is skipped on non-scheduled runs. Fixed in #23 (`!cancelled()`), with a workflow test.
+    6. The merge gate posted "✅ Ready for human merge".
+  - **Wiring audit:** an adversarial audit of every workflow's job wiring confirmed 3 more issues, all fixed in #23:
+    - closes during a pause were lost; the closer now ignores the pause, since it runs no AI
+    - the digest could ship edits from an errored run
+    - a run cancelled while paused was mislabelled
+- **Deviation:** the closer ignores `AGENT_PAUSED`, and a test asserts it runs no LLM.
+
 ## Things only you can do
 
 **Now**
@@ -458,7 +477,9 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 
 **Ongoing**
 
-- Merge PRs at Level 1, promote tickets to `status:ready`, answer `status:needs-human` questions, and merge digest PRs.
+- Merge PRs at Level 1 (first up: #19), promote tickets to `status:ready` (#9–#17, and agent proposals like #20 and #21), answer `status:needs-human` questions, and merge digest PRs.
+- Renew the Claude token before it expires (setup tokens last a year; this one was made 2026-10-17, so renew by 2027-10). Preflight reports a 401 when it has.
+- Optional: `gh secret delete ANTHROPIC_API_KEY` (unused), and delete the old App `.pem` files from `~/Downloads`.
 - Family members need a GitHub account to submit ideas. Send me their handles for `trustedSubmitters`.
 
 ## Product questions that will come up later (not blocking)
@@ -487,3 +508,4 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 - 2026-10-17: Phase 5 complete: repo live and public, CI green on GitHub, Pages deployed, branch protection applied.
 - 2026-10-17: Phase 6 complete: labels live, issue forms, Tracker + GitHub adapter, picker, run log #2; protection tightened to 1 approval.
 - 2026-10-17: Phase 7 complete: six agent workflows + preflight; three adversarial passes (35 + 40 + 22 findings) led to the trusted/LLM job split, the main-only reviewer workspace and a bounded review sweep; subscription-only Claude auth; 659 unit tests.
+- 2026-10-17: Phase 8 complete: backlog #6–#17 seeded; Preflight green on real credentials; the dry run took #6 to "Ready for human merge" (PR #19) after fixing three plumbing bugs (#22, #23); the loop is live at level 1; 666 unit tests.
