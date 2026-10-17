@@ -1287,7 +1287,7 @@ describe('merge', () => {
   };
 
   it('comments "Ready for human merge" once per head commit at level 1', async () => {
-    const h = harness();
+    const h = harness({ config: { autonomyLevel: 1 } });
     h.prs.reviewList = [approved];
     h.tracker.seed({ number: 30, labels: ['size:S', 'agent-approved'] });
     await cmdMerge(h.ctx, { pr: '30' });
@@ -1299,7 +1299,7 @@ describe('merge', () => {
   });
 
   it('is not silenced by a stranger posting the notice markers first', async () => {
-    const h = harness();
+    const h = harness({ config: { autonomyLevel: 1 } });
     h.prs.reviewList = [approved];
     h.tracker.seed({ number: 30, labels: ['size:S', 'agent-approved'] });
     h.tracker.addComment(30, `<!-- mm:ready-for-human --><!-- sha:${SHA} -->`, 'troll');

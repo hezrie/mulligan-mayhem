@@ -1,12 +1,21 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { AgentConfigSchema, loadAgentConfig } from '../../scripts/agent/config.ts';
 
 describe('agent.config.json', () => {
   const config = loadAgentConfig();
 
-  it('is valid and starts at autonomy level 1 (agent opens PRs, human merges)', () => {
-    expect(config.autonomyLevel).toBe(1);
+  it('is valid; level 1 auto-merges nothing, and the current level is the one PLAN.md records', () => {
+    expect([1, 2, 3]).toContain(config.autonomyLevel);
     expect(config.autoMergeSizes['1']).toEqual([]);
+    // Changing the level is a deliberate owner decision, so it must be recorded in the plan too.
+    const plan = readFileSync(resolve(import.meta.dirname, '../../PLAN.md'), 'utf8');
+    expect(plan).toMatch(
+      new RegExp(
+        `\\| 8 +\\| Seed backlog & dry run \\|[^|\\n]*level ${String(config.autonomyLevel)}\\b`,
+      ),
+    );
   });
 
   it('allows auto-merge only for S and M, and only more as the level rises', () => {
