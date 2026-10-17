@@ -26,6 +26,24 @@ describe('parseHole', () => {
       },
     ],
     ['an unknown terrain kind', { terrain: { base: 'lava', zones: [] } }],
+    [
+      'an unknown terrain zone kind',
+      {
+        terrain: {
+          base: 'fairway',
+          zones: [
+            {
+              kind: 'lava',
+              polygon: [
+                { x: 0, y: 0 },
+                { x: 9, y: 0 },
+                { x: 9, y: 9 },
+              ],
+            },
+          ],
+        },
+      },
+    ],
     ['a tee outside the boundary', { tee: { x: 500, y: 500 } }],
     ['a tee touching a wall', { tee: { x: 2, y: 200 } }],
     ['a cup outside the boundary', { cup: { x: -5, y: 10 } }],
@@ -36,6 +54,16 @@ describe('parseHole', () => {
     ['a non-finite coordinate', { tee: { x: Number.NaN, y: 1 } }],
   ])('rejects %s with a readable error', (_label, overrides) => {
     expect(() => makeHole(overrides)).toThrow(HoleValidationError);
+  });
+
+  it.each(['rough', 'sand'] as const)('accepts terrain zones of kind %s', (kind) => {
+    const polygon = [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 100 },
+    ];
+    const hole = makeHole({ terrain: { base: kind, zones: [{ kind, polygon }] } });
+    expect(hole.terrain).toEqual({ base: kind, zones: [{ kind, polygon }] });
   });
 
   it('names the hole and the failing path in the error message', () => {

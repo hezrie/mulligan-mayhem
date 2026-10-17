@@ -80,3 +80,71 @@ describe('stepBall', () => {
     }
   });
 });
+
+describe('stepBall on rough and sand', () => {
+  /** A long open box so a speed-400 roll on fairway (~222 units) never reaches a wall. */
+  const longBox = (terrain: Record<string, unknown>) =>
+    makeCourse({
+      size: { width: 1000, height: 400 },
+      boundary: [
+        { x: 0, y: 0 },
+        { x: 1000, y: 0 },
+        { x: 1000, y: 400 },
+        { x: 0, y: 400 },
+      ],
+      tee: { x: 100, y: 200 },
+      cup: { x: 500, y: 50 },
+      terrain,
+    });
+
+  function stoppingDistance(base: string): number {
+    const c = longBox({ base, zones: [] });
+    let ball = { pos: vec2(100, 200), vel: vec2(400, 0) };
+    for (let i = 0; i < 10_000; i++) {
+      const r = stepBall(ball, c);
+      ball = r.ball;
+      if (r.atRest) break;
+    }
+    expect(ball.vel).toEqual(ZERO);
+    return ball.pos.x - 100;
+  }
+
+  it('stops within 3% of one third of the fairway distance on sand', () => {
+    const third = stoppingDistance('fairway') / 3;
+    expect(Math.abs(stoppingDistance('sand') - third)).toBeLessThanOrEqual(0.03 * third);
+  });
+
+  it('stops within 3% of one half of the fairway distance on rough', () => {
+    const half = stoppingDistance('fairway') / 2;
+    expect(Math.abs(stoppingDistance('rough') - half)).toBeLessThanOrEqual(0.03 * half);
+  });
+
+  it('decelerates at the sand rate only while the centre is inside a sand zone', () => {
+    const sand = {
+      kind: 'sand',
+      polygon: [
+        { x: 300, y: 0 },
+        { x: 600, y: 0 },
+        { x: 600, y: 400 },
+        { x: 300, y: 400 },
+      ],
+    };
+    const c = longBox({ base: 'fairway', zones: [sand] });
+    let ball = { pos: vec2(200, 200), vel: vec2(400, 0) };
+    let fairwaySteps = 0;
+    let sandSteps = 0;
+    for (let i = 0; i < 10_000; i++) {
+      const r = stepBall(ball, c);
+      if (r.atRest) break;
+      const inside = ball.pos.x > 300 && ball.pos.x < 600;
+      const decel = (ball.vel.x - r.ball.vel.x) / DT;
+      expect(decel).toBeCloseTo(inside ? TERRAIN.sand.rollingDecel : FAIRWAY, 6);
+      if (inside) sandSteps++;
+      else fairwaySteps++;
+      ball = r.ball;
+    }
+    expect(fairwaySteps).toBeGreaterThan(0);
+    expect(sandSteps).toBeGreaterThan(0);
+    expect(ball.pos.x).toBeGreaterThan(300);
+  });
+});

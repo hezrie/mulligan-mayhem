@@ -21,10 +21,14 @@ import { BALL_RADIUS, DT, MAX_SHOT_SPEED } from '../../src/core/physics/constant
 import { TERRAIN, TERRAIN_KINDS } from '../../src/core/physics/terrain.ts';
 import { Rng } from '../../src/core/rng.ts';
 
-const pinball = parseHole(
-  JSON.parse(readFileSync(join(import.meta.dirname, '../fixtures/holes/pinball.json'), 'utf8')),
-);
-const HOLES: Hole[] = [getHole('skeleton-01'), pinball];
+const loadFixture = (name: string): Hole =>
+  parseHole(
+    JSON.parse(readFileSync(join(import.meta.dirname, `../fixtures/holes/${name}.json`), 'utf8')),
+  );
+const pinball = loadFixture('pinball');
+/** Rough and sand zones, so the sweep crosses every terrain boundary. */
+const bunkers = loadFixture('bunkers');
+const HOLES: Hole[] = [getHole('skeleton-01'), pinball, bunkers];
 
 const SHOTS_PER_HOLE = 300;
 const SLOWEST_DECEL = Math.min(...TERRAIN_KINDS.map((k) => TERRAIN[k].rollingDecel));
