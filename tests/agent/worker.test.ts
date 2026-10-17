@@ -77,6 +77,8 @@ describe('decideWorkerOutcome', () => {
     hasChanges: true,
     checkPassed: true,
     claudeSubtype: 'success',
+    claudeErrored: false,
+    hooksLoaded: true,
   };
 
   it.each([
@@ -98,6 +100,39 @@ describe('decideWorkerOutcome', () => {
     ['plan too short', { ...ok, mode: 'plan' as const, planText: 'do it' }, 'failed'],
   ])('%s', (_label, input, outcome) => {
     expect(decideWorkerOutcome(input).outcome).toBe(outcome);
+  });
+
+  it.each([
+    ['guardrails missing (even with changes)', { ...ok, hooksLoaded: false }],
+    [
+      'Claude never reported (no execution result)',
+      { ...ok, hasChanges: false, claudeSubtype: null, claudeErrored: true },
+    ],
+    [
+      'an execution error with no work done',
+      { ...ok, hasChanges: false, claudeSubtype: 'error_during_execution', claudeErrored: true },
+    ],
+  ])('classifies %s as an infrastructure failure (no attempt burned)', (_label, input) => {
+    expect(decideWorkerOutcome(input).outcome).toBe('infra-failure');
+  });
+
+  it('never opens a PR from a Claude run that errored, even if the check passed', () => {
+    const d = decideWorkerOutcome({ ...ok, claudeErrored: true, claudeSubtype: 'error_max_turns' });
+    expect(d).toEqual({
+      outcome: 'failed',
+      reason: 'the agent hit the turn limit before finishing',
+    });
+  });
+
+  it('treats max turns with no changes as a real failure, not infrastructure', () => {
+    expect(
+      decideWorkerOutcome({
+        ...ok,
+        hasChanges: false,
+        claudeErrored: true,
+        claudeSubtype: 'error_max_turns',
+      }).outcome,
+    ).toBe('failed');
   });
 
   it('explains a max-turns failure', () => {
@@ -170,6 +205,26 @@ describe('PR helpers', () => {
     expect(finalizePrBody('Did it.\n\nCloses #12', 12, RUN).match(/Closes #12/g)).toHaveLength(1);
     expect(finalizePrBody('Did it.', 12, RUN)).toContain('Closes #12');
     expect(finalizePrBody(null, 12, RUN)).toContain('did not write a PR description');
+  });
+
+  it('stays linear on hostile input (no catastrophic backtracking in a trusted job)', () => {
+    const hostile = `${'fix'.padEnd(40_000, ' ')}x\n`.repeat(5);
+    const started = performance.now();
+    finalizePrBody(hostile, 12, RUN);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
+  it('neutralizes every other closing keyword, so merging closes only this ticket', () => {
+    const body = finalizePrBody(
+      'Fixes #2 and closes: #15.\nResolved hezrie/mulligan-mayhem#9, fix https://github.com/hezrie/mulligan-mayhem/issues/7.\nThe fix is small; closes the gap.',
+      12,
+      RUN,
+    );
+    const closing = /\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\b\s*:?\s+(\S*#\d+|https?:\S+)/gi;
+    expect(body.match(closing)).toEqual(['Closes #12']);
+    expect(body).toContain('Refs #2 and Refs: #15.');
+    expect(body).toContain('The fix is small; closes the gap.');
+    expect(body.match(/Closes #\d+/g)).toEqual(['Closes #12']);
   });
 
   it('marks plan comments so the reviewer can find them', () => {

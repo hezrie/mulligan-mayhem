@@ -70,7 +70,8 @@ export function planWorkerStart(input: {
   };
 }
 
-export type WorkerOutcome = 'escalated' | 'plan-posted' | 'pr-opened' | 'fix-pushed' | 'failed';
+export type WorkerOutcome =
+  'escalated' | 'plan-posted' | 'pr-opened' | 'fix-pushed' | 'failed' | 'infra-failure';
 
 export interface WorkerFinishInput {
   readonly mode: PickMode;
@@ -78,14 +79,40 @@ export interface WorkerFinishInput {
   readonly planText: string | null;
   readonly hasChanges: boolean;
   readonly checkPassed: boolean;
-  /** e.g. 'error_max_turns' from the execution summary, or null. */
+  /** e.g. 'error_max_turns' from the execution summary, or null if Claude never reported. */
   readonly claudeSubtype: string | null;
+  /** The Claude run ended in an error (incl. max turns). */
+  readonly claudeErrored: boolean;
+  /** The guardrail canary was present: the agent really ran under the hooks. */
+  readonly hooksLoaded: boolean;
+}
+
+/**
+ * Infrastructure failures are not the ticket's fault (credentials expired, hooks failed to load,
+ * the run died): they don't burn an attempt, and they trip the circuit breaker if they repeat.
+ */
+export function isInfraFailure(input: WorkerFinishInput): boolean {
+  if (!input.hooksLoaded) return true;
+  if (input.escalated || input.hasChanges || (input.planText?.trim().length ?? 0) > 0) return false;
+  return (
+    input.claudeSubtype === null ||
+    input.claudeSubtype === 'error_during_execution' ||
+    (input.claudeErrored && input.claudeSubtype !== 'error_max_turns')
+  );
 }
 
 export function decideWorkerOutcome(input: WorkerFinishInput): {
   outcome: WorkerOutcome;
   reason: string;
 } {
+  if (isInfraFailure(input)) {
+    return {
+      outcome: 'infra-failure',
+      reason: input.hooksLoaded
+        ? `the agent did not run (${input.claudeSubtype ?? 'no result'})`
+        : 'the guardrail hooks did not load',
+    };
+  }
   if (input.escalated) return { outcome: 'escalated', reason: 'the worker escalated' };
   if (input.mode === 'plan') {
     return (input.planText?.trim().length ?? 0) >= 80
@@ -95,6 +122,13 @@ export function decideWorkerOutcome(input: WorkerFinishInput): {
   if (!input.hasChanges) {
     const why = input.claudeSubtype === 'error_max_turns' ? ' (hit the turn limit)' : '';
     return { outcome: 'failed', reason: `no code changes were committed${why}` };
+  }
+  if (input.claudeErrored) {
+    const why =
+      input.claudeSubtype === 'error_max_turns'
+        ? 'hit the turn limit'
+        : `ended with ${input.claudeSubtype ?? 'an error'}`;
+    return { outcome: 'failed', reason: `the agent ${why} before finishing` };
   }
   if (!input.checkPassed) {
     return { outcome: 'failed', reason: '`npm run check` had not passed on the final files' };
@@ -144,13 +178,20 @@ export function planComment(plan: string): string {
   return `${PLAN_MARKER}\n## 🤖 Implementation plan\n\n${plan.trim()}\n\n---\n_The reviewer agent will approve this plan (\`${PLAN.approved}\`) or request changes before any code is written._`;
 }
 
-/** Ensures the PR body closes the ticket and says who made it. */
+/** GitHub's closing keywords, followed by any issue reference form (#N, owner/repo#N, URL). */
+const CLOSING_KEYWORD =
+  /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b(\s*:\s*|\s+)(?=(?:[\w.-]+\/[\w.-]+)?#\d|https?:\/\/)/gi;
+
+/** GitHub's PR body limit; also keeps every regex pass over LLM text bounded. */
+const MAX_BODY = 60_000;
+
+/**
+ * The PR body is LLM-written. Its closing keywords are neutralized (merging must close exactly one
+ * issue: this ticket, never e.g. the run log), then one canonical "Closes #N" is appended.
+ */
 export function finalizePrBody(body: string | null, issue: number, runUrl: string): string {
   const base = body?.trim()
-    ? body.trim()
+    ? body.trim().slice(0, MAX_BODY).replace(CLOSING_KEYWORD, 'Refs$1')
     : `Implements #${String(issue)}.\n\n⚠️ The worker did not write a PR description with the criterion → test mapping.`;
-  const closes = new RegExp(`\\b(closes|fixes|resolves)\\s+#${String(issue)}\\b`, 'i').test(base)
-    ? ''
-    : `\n\nCloses #${String(issue)}`;
-  return `${base}${closes}\n\n---\n🤖 Opened by the worker agent · [run](${runUrl}) · reviewed next by the reviewer agent`;
+  return `${base}\n\nCloses #${String(issue)}\n\n---\n🤖 Opened by the worker agent · [run](${runUrl}) · reviewed next by the reviewer agent`;
 }

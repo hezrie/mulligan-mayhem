@@ -1,7 +1,8 @@
-# Agent Merge: the merge gate. Squash-merges only when CI is green, the reviewer approved the
-# current head, the size is allowed at the current autonomyLevel, and no protected path is in the
-# diff; otherwise it comments "Ready for human merge". No LLM. Uses the bot App token so the merge
-# triggers CI/deploy and the closer. PROTECTED.
+# Agent Merge: the merge gate (no LLM). Squash-merges only when CI is green (it waits for pending
+# checks), the reviewer approved the current head, the size is allowed at the current autonomyLevel,
+# and no protected path or golden replay is in the diff; otherwise "Ready for human merge" (once per
+# commit). Called by the reviewer after an approval, and swept hourly so approved PRs are
+# re-evaluated (e.g. after autonomyLevel changes). PROTECTED.
 name: Agent Merge
 
 on:
@@ -13,8 +14,11 @@ on:
   workflow_dispatch:
     inputs:
       pr:
-        description: PR number to evaluate for merge
-        required: true
+        description: PR number to evaluate (leave empty to sweep all approved agent PRs)
+        required: false
+        default: ''
+  schedule:
+    - cron: '23 * * * *'
 
 permissions:
   contents: read
@@ -22,8 +26,14 @@ permissions:
 jobs:
   merge:
     if: vars.AGENT_PAUSED != 'true'
+    concurrency:
+      group: agent-merge
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      checks: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -46,5 +56,12 @@ jobs:
       - name: Evaluate the merge gate
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
+          CHECKS_TOKEN: ${{ github.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
           PR: ${{ inputs.pr }}
-        run: npx tsx scripts/agent/cli.ts merge --pr "$PR"
+        run: |
+          if [ -n "$PR" ]; then
+            npx tsx scripts/agent/cli.ts merge --pr "$PR"
+          else
+            npx tsx scripts/agent/cli.ts merge-sweep
+          fi

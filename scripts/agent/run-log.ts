@@ -23,6 +23,7 @@ export const OUTCOMES = [
   'fix-pushed',
   'escalated',
   'failed',
+  'infra-failure',
   'no-work',
   'approved',
   'changes-requested',

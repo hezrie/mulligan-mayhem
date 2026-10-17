@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   digestBody,
+  prsToCheck,
   recommendAutonomy,
   shippedTickets,
   weeklyMetrics,
   type AutonomyInput,
 } from '../../scripts/agent/digest.ts';
+import { isRevertCommit } from '../../scripts/agent/github-pr.ts';
 import type { RunLogEntry } from '../../scripts/agent/run-log.ts';
 
 const NOW = new Date('2026-10-26T07:00:00Z');
@@ -94,6 +96,21 @@ describe('weekly metrics', () => {
     expect(m.totalCostUsd).toBe(6); // 1.5 + 2.5 (incl. the changes-requested review) + 2
   });
 
+  it('judges first-pass on the ticket’s whole history, not just this week', () => {
+    const entries = [
+      e({ issue: 7, role: 'reviewer', outcome: 'changes-requested', startedAt: daysAgo(9) }),
+      e({
+        issue: 7,
+        pr: 107,
+        role: 'closer',
+        mode: 'close',
+        outcome: 'closed',
+        startedAt: daysAgo(1),
+      }),
+    ];
+    expect(weeklyMetrics(entries, NOW, 0)).toMatchObject({ ticketsDone: 1, firstPassRate: 0 });
+  });
+
   it('handles an empty week', () => {
     const m = weeklyMetrics([], NOW, 0);
     expect(m).toMatchObject({
@@ -116,6 +133,22 @@ describe('weekly metrics', () => {
       [2, false],
       [1, true],
     ]);
+  });
+
+  it('counts a ticket that was reopened and closed again only once', () => {
+    const entries = [
+      ...lifecycle(1, { day: 3 }),
+      ...lifecycle(2, { day: 2 }),
+      e({
+        issue: 1,
+        role: 'closer',
+        mode: 'close',
+        outcome: 'closed',
+        pr: 101,
+        startedAt: daysAgo(1),
+      }),
+    ];
+    expect(shippedTickets(entries).map((t) => t.issue)).toEqual([1, 2]);
   });
 });
 
@@ -162,6 +195,23 @@ describe('autonomy recommendation', () => {
       ]),
     ];
     expect(recommendAutonomy(base(spiky, { level: 3 }))).toMatchObject({ action: 'lower', to: 2 });
+  });
+
+  it('never counts a PR as clean unless its commit authors were actually checked', () => {
+    const entries = tenS(0);
+    const toCheck = prsToCheck(entries);
+    expect(toCheck).toHaveLength(10);
+    expect(recommendAutonomy(base(entries, { checkedPrs: new Set(toCheck) })).action).toBe('raise');
+    expect(
+      recommendAutonomy(base(entries, { checkedPrs: new Set(toCheck.slice(0, 7)) })).action,
+    ).toBe('keep');
+  });
+
+  it('recognizes reverts in every common style (they gate autonomy)', () => {
+    expect(isRevertCommit('Revert "feat: sand (#12)"')).toBe(true);
+    expect(isRevertCommit('revert: feat(physics): add sand friction (#12)')).toBe(true);
+    expect(isRevertCommit('fix: undo sand\n\nThis reverts commit abc1234.')).toBe(true);
+    expect(isRevertCommit('feat: reverting ball spin is now possible')).toBe(false);
   });
 
   it('requires M-ticket evidence and 15 clean S tickets to go 2 → 3', () => {

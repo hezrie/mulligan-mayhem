@@ -2,7 +2,7 @@
  * Pull-request operations on GitHub, used by the worker, reviewer, merger and closer steps.
  * Code-host specific on purpose (the Tracker interface is only about tickets). PROTECTED.
  */
-import type { GhClient } from './tracker/gh-client.ts';
+import { GhApiError, type GhClient } from './tracker/gh-client.ts';
 
 export interface PrInfo {
   readonly number: number;
@@ -13,6 +13,8 @@ export interface PrInfo {
   readonly draft: boolean;
   readonly headRef: string;
   readonly headSha: string;
+  /** owner/name of the head repository ('' if the fork was deleted). Forks ≠ this repo. */
+  readonly headRepo: string;
   readonly baseRef: string;
   readonly labels: readonly string[];
   readonly author: string;
@@ -24,9 +26,14 @@ export interface CheckRun {
   readonly name: string;
   readonly status: string;
   readonly conclusion: string | null;
+  /** Re-runs and label-triggered runs add newer runs with the same name; only the newest counts. */
+  readonly id?: number;
+  readonly startedAt?: string | null;
+  readonly completedAt?: string | null;
 }
 
 export interface Review {
+  readonly id: number;
   readonly body: string;
   readonly author: string;
   readonly state: string;
@@ -42,7 +49,7 @@ interface RestPr {
   merged?: boolean;
   merged_at?: string | null;
   draft?: boolean;
-  head: { ref: string; sha: string };
+  head: { ref: string; sha: string; repo?: { full_name: string } | null };
   base: { ref: string };
   labels: { name: string }[];
   user: { login: string } | null;
@@ -60,12 +67,18 @@ export function toPrInfo(pr: RestPr): PrInfo {
     draft: pr.draft === true,
     headRef: pr.head.ref,
     headSha: pr.head.sha,
+    headRepo: pr.head.repo?.full_name ?? '',
     baseRef: pr.base.ref,
     labels: pr.labels.map((l) => l.name),
     author: pr.user?.login ?? 'ghost',
     url: pr.html_url,
     mergeable: pr.mergeable ?? null,
   };
+}
+
+/** "Revert …" (GitHub's button, git revert), "revert: …" (conventional commits), or a body that says so. */
+export function isRevertCommit(message: string): boolean {
+  return /^revert\b/i.test(message) || message.includes('This reverts commit');
 }
 
 export class GitHubPullRequests {
@@ -96,19 +109,29 @@ export class GitHubPullRequests {
   }
 
   async checkRuns(sha: string): Promise<CheckRun[]> {
-    const data = await this.gh.rest<{ check_runs: CheckRun[] }>(
-      'GET',
-      `repos/${this.repo}/commits/${sha}/check-runs?per_page=100`,
-    );
+    const data = await this.gh.rest<{
+      check_runs: {
+        id: number;
+        name: string;
+        status: string;
+        conclusion: string | null;
+        started_at: string | null;
+        completed_at: string | null;
+      }[];
+    }>('GET', `repos/${this.repo}/commits/${sha}/check-runs?per_page=100`);
     return data.check_runs.map((c) => ({
+      id: c.id,
       name: c.name,
       status: c.status,
       conclusion: c.conclusion,
+      startedAt: c.started_at,
+      completedAt: c.completed_at,
     }));
   }
 
   async reviews(number: number): Promise<Review[]> {
     const raw = await this.gh.restAll<{
+      id: number;
       body: string | null;
       user: { login: string } | null;
       state: string;
@@ -116,12 +139,24 @@ export class GitHubPullRequests {
       submitted_at: string;
     }>(`repos/${this.repo}/pulls/${String(number)}/reviews?per_page=100`);
     return raw.map((r) => ({
+      id: r.id,
       body: r.body ?? '',
       author: r.user?.login ?? 'ghost',
       state: r.state,
       commitId: r.commit_id,
       submittedAt: r.submitted_at,
     }));
+  }
+
+  /** Inline comments of one review (a maintainer's line-by-line feedback). */
+  async reviewComments(
+    number: number,
+    reviewId: number,
+  ): Promise<{ path: string; line: number | null; body: string }[]> {
+    const raw = await this.gh.restAll<{ path: string; line: number | null; body: string }>(
+      `repos/${this.repo}/pulls/${String(number)}/reviews/${String(reviewId)}/comments?per_page=100`,
+    );
+    return raw.map((c) => ({ path: c.path, line: c.line, body: c.body }));
   }
 
   async submitReview(
@@ -137,12 +172,17 @@ export class GitHubPullRequests {
     });
   }
 
-  /** Squash-merges, pinned to the reviewed head SHA so nothing unreviewed sneaks in. */
-  async squashMerge(number: number, sha: string, title: string): Promise<void> {
+  /**
+   * Squash-merges, pinned to the reviewed head SHA so nothing unreviewed sneaks in. The message is
+   * given explicitly: GitHub's default would concatenate the agent's own commit messages, and a
+   * closing keyword in one of them would close that issue on main.
+   */
+  async squashMerge(number: number, sha: string, title: string, message: string): Promise<void> {
     await this.gh.rest('PUT', `repos/${this.repo}/pulls/${String(number)}/merge`, {
       merge_method: 'squash',
       sha,
       commit_title: `${title} (#${String(number)})`,
+      commit_message: message,
     });
   }
 
@@ -179,11 +219,11 @@ export class GitHubPullRequests {
       }`,
       { owner, name, number: issue },
     );
-    const closer = [...data.repository.issue.timelineItems.nodes]
-      .reverse()
-      .map((n) => n.closer)
-      .find((c) => c?.__typename === 'PullRequest' && c.merged);
-    return closer?.number && closer.title && closer.url
+    // Only the most recent close counts: a ticket reopened and then closed by hand was not
+    // shipped by that close, even if a merged PR closed it once before.
+    const closer = data.repository.issue.timelineItems.nodes.at(-1)?.closer;
+    if (!(closer?.__typename === 'PullRequest' && closer.merged)) return null;
+    return closer.number && closer.title && closer.url
       ? { number: closer.number, title: closer.title, url: closer.url }
       : null;
   }
@@ -210,11 +250,33 @@ export class GitHubPullRequests {
     return [...new Set(commits.map((c) => c.author?.login ?? 'unknown'))];
   }
 
-  /** Commits on the default branch since a date whose message starts with "Revert". */
+  /** Commits on the default branch since a date that revert something. */
   async revertsSince(sinceIso: string): Promise<number> {
     const commits = await this.gh.restAll<{ commit: { message: string } }>(
       `repos/${this.repo}/commits?since=${encodeURIComponent(sinceIso)}&per_page=100`,
     );
-    return commits.filter((c) => c.commit.message.startsWith('Revert')).length;
+    return commits.filter((c) => isRevertCommit(c.commit.message)).length;
+  }
+
+  async updateBody(number: number, body: string): Promise<void> {
+    await this.gh.rest('PATCH', `repos/${this.repo}/pulls/${String(number)}`, { body });
+  }
+
+  async branchExists(name: string): Promise<boolean> {
+    try {
+      await this.gh.rest('GET', `repos/${this.repo}/git/ref/heads/${name}`);
+      return true;
+    } catch (error) {
+      if (error instanceof GhApiError && error.status === 404) return false;
+      throw error;
+    }
+  }
+
+  /** Open agent/* PRs carrying a label (for the merge sweep). */
+  async openAgentPrsWithLabel(label: string): Promise<PrInfo[]> {
+    const raw = await this.gh.restAll<RestPr>(`repos/${this.repo}/pulls?state=open&per_page=100`);
+    return raw
+      .map(toPrInfo)
+      .filter((pr) => pr.headRef.startsWith('agent/') && pr.labels.includes(label));
   }
 }

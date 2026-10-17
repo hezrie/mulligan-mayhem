@@ -19,8 +19,15 @@ agent_mode_active() { [ -n "${AGENT_MODE:-}" ]; }
 # Runs a hook's main function in a subshell and maps EVERY non-zero exit to 2. Even a bug in a
 # hook (a syntax error, an unexpected failure) then blocks instead of silently allowing.
 run_guarded() {
-  local rc=0
-  ("$@") || rc=$?
+  local rc
+  # Not inside an `||`/`&&` list: there bash would silently disable the ERR trap for the whole
+  # subshell, and a failing command in the hook would fall through to "allow".
+  trap - ERR
+  (
+    trap 'echo "guardrail hook failed unexpectedly (line $LINENO); blocking for safety" >&2; exit 2' ERR
+    "$@"
+  )
+  rc=$?
   [ "$rc" -eq 0 ] && exit 0
   exit 2
 }
@@ -39,11 +46,23 @@ JQ_GLOB='def g2r: gsub("(?<c>[.+?^${}()|\\[\\]\\\\])"; "\\\(.c)") | gsub("\\*\\*
 # Prints each repo-relative path (one per line on stdin) that matches the given config list.
 matching_paths() { # $1 = protectedPaths | goldenPaths
   jq -R . | jq -s . | jq -r --slurpfile cfg "$CONFIG" --arg key "$1" "$JQ_GLOB"'
-    .[] as $p | select(any($cfg[0][$key][]; . as $g | $p | test($g | g2r))) | $p'
+    .[] as $p | select(any(($cfg[0][$key] // error("agent.config.json has no \($key)"))[]; . as $g | $p | test($g | g2r))) | $p'
 }
 
-is_protected() { [ -n "$(printf '%s\n' "$1" | matching_paths protectedPaths)" ]; }
-is_golden() { [ -n "$(printf '%s\n' "$1" | matching_paths goldenPaths)" ]; }
+# Each lookup is assigned (never tested inline as "$(...)"), so a failing jq blocks instead of
+# reading as "no match".
+is_protected() {
+  local hits
+  hits="$(printf '%s\n' "$1" | matching_paths protectedPaths)" || block "could not evaluate protectedPaths"
+  [ -z "$hits" ] || return 0
+  hits="$(printf '%s\n' "$1" | matching_paths workspaceProtectedPaths)" || block "could not evaluate workspaceProtectedPaths"
+  [ -n "$hits" ]
+}
+is_golden() {
+  local hits
+  hits="$(printf '%s\n' "$1" | matching_paths goldenPaths)" || block "could not evaluate goldenPaths"
+  [ -n "$hits" ]
+}
 
 # Collapses '.' and '..' in an absolute path (purely lexical; bash 3.2 compatible).
 lexical_normalize() {
@@ -64,19 +83,34 @@ lexical_normalize() {
 }
 
 # Resolves symlinks in the deepest existing ancestor, so a symlink can't smuggle a write past us.
+# A directory we may not enter (e.g. /root) keeps its lexical path.
 physical_path() {
-  local p rest=""
+  local p rest="" resolved
   p="$(lexical_normalize "$1")"
   while [ ! -e "$p" ] && [ "$p" != "/" ]; do
     rest="/$(basename "$p")$rest"
     p="$(dirname "$p")"
   done
   if [ -d "$p" ]; then
-    p="$(cd "$p" && pwd -P)"
+    resolved="$(cd "$p" 2>/dev/null && pwd -P)" || resolved="$p"
   else
-    p="$(cd "$(dirname "$p")" && pwd -P)/$(basename "$p")"
+    resolved="$(cd "$(dirname "$p")" 2>/dev/null && pwd -P)/$(basename "$p")" || resolved="$p"
   fi
-  printf '%s%s\n' "${p%/}" "$rest"
+  printf '%s%s\n' "${resolved%/}" "$rest"
+}
+
+# Drops the bodies of quoted heredocs (<<'EOF' / <<"EOF"): their text is literal stdin data.
+strip_quoted_heredocs() {
+  awk '
+    delim != "" { line = $0; sub(/^\t+/, "", line); if (line == delim) delim = ""; next }
+    {
+      print
+      if (match($0, /<<-?[ \t]*'"'"'[A-Za-z_][A-Za-z0-9_]*'"'"'/) || match($0, /<<-?[ \t]*"[A-Za-z_][A-Za-z0-9_]*"/)) {
+        d = substr($0, RSTART, RLENGTH)
+        sub(/^<<-?[ \t]*./, "", d)
+        delim = substr(d, 1, length(d) - 1)
+      }
+    }'
 }
 
 ROOT_PHYS="$(cd "$PROJECT_DIR" && pwd -P)"

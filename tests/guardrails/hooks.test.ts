@@ -4,7 +4,7 @@
  * silently rot.
  */
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -80,6 +80,17 @@ describe('protect-paths.sh (PreToolUse Edit|Write|MultiEdit|NotebookEdit)', () =
     expect(r.stderr).toContain('protected path');
   });
 
+  it.each([
+    'node_modules/zod/index.js',
+    '.git/hooks/pre-push',
+    '.git/config',
+    '.agent/.state/check-pass',
+  ])('blocks agents from writing workspace-only protected path %s', (path) => {
+    const r = runHook('protect-paths.sh', edit(join(ROOT, path), 'Write'), worker);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('protected path');
+  });
+
   it('sees through ../ traversal and relative paths', () => {
     expect(runHook('protect-paths.sh', edit(join(ROOT, 'src/../.github/x.yml')), worker).code).toBe(
       2,
@@ -140,6 +151,18 @@ describe('protect-paths.sh (PreToolUse Edit|Write|MultiEdit|NotebookEdit)', () =
     ).toBe(2);
   });
 
+  it('fails closed when the config is missing a list (e.g. an older agent.config.json)', () => {
+    const project = join(scratch, 'old-config-project');
+    mkdirSync(project, { recursive: true });
+    const older: Partial<ReturnType<typeof loadAgentConfig>> = { ...loadAgentConfig() };
+    delete older.workspaceProtectedPaths;
+    writeFileSync(join(project, 'agent.config.json'), JSON.stringify(older));
+    for (const path of ['.git/config', 'src/core/rng.ts']) {
+      const r = runHook('protect-paths.sh', edit(join(project, path), 'Write'), worker, project);
+      expect(r.code, path).toBe(2);
+    }
+  });
+
   it('fails closed on malformed input', () => {
     expect(runHook('protect-paths.sh', 'not json', worker).code).toBe(2);
     expect(runHook('protect-paths.sh', { tool_name: 'Edit', tool_input: {} }, worker).code).toBe(2);
@@ -178,13 +201,24 @@ describe('guard-bash.sh (PreToolUse Bash)', () => {
     'git log --oneline -5',
     'cat CLAUDE.md',
     'rm -rf dist coverage test-results',
-    'rm -rf ./node_modules/.vite',
     'npm run replay:record -- tests/replays/new-hole.json',
     'node -e "console.log(process.env.HOME)"',
     'gh issue view 12',
     'gh pr create --title x --body-file .agent/out/pr-body.md',
     'npx tsx scripts/agent/escalate.ts "Criterion 3 needs a product decision: should cp > 1?"',
     "npx tsx scripts/agent/escalate.ts 'The flaky test needs curl-free retries; see .env docs'",
+    'find src -name "*.ts" -newer package.json',
+    'npm run test:e2e 2>&1 | tee /tmp/e2e.log',
+    'git checkout -- src/core/rng.ts',
+    'git checkout HEAD -- src/core/rng.ts',
+    'git restore src/core/rng.ts',
+    'git reset --hard HEAD~1',
+    'git reset --soft HEAD~1',
+    'npm run check > /tmp/check.log 2>&1; echo "exit=$?"',
+    'npm run check 2>&1 | tail -40; echo "EXIT: ${PIPESTATUS[0]}"',
+    'npx playwright test --reporter=line 2>&1 | grep -v "^$" | tail -30',
+    'ls /var/root > /tmp/listing.txt',
+    'git commit -m "$(cat <<\'EOF\'\nfeat(physics): sand (#12)\n\nNo git push or git config here; ratio > 1.\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)"',
   ])('allows: %s', (command) => {
     const r = runHook('guard-bash.sh', bash(command), worker);
     expect(r.stderr).toBe('');
@@ -220,10 +254,36 @@ describe('guard-bash.sh (PreToolUse Bash)', () => {
     ["sed -i '' 's/a/b/' .github/workflows/ci.yml", 'protected path'],
     ['cp /tmp/x agent.config.json', 'protected path'],
     ['mv tmp.json ./.claude/settings.json', 'protected path'],
-    ['git checkout origin/main -- vitest.config.ts', 'protected path'],
+    ['git checkout origin/main -- vitest.config.ts', 'checking out another branch or commit'],
+    ['git switch --detach ab7781a', 'switching branches'],
+    ['git checkout -b tmp ab7781a', 'checking out another branch or commit'],
+    ['git checkout main', 'checking out another branch or commit'],
+    ['git restore --source=ab7781a .claude', 'restoring files from another commit'],
+    ['git restore -s ab7781a -- .', 'restoring files from another commit'],
+    ['git reset --hard ab7781a', 'git reset --hard may only move within your own commits'],
+    ["cat <<'EOF' > CLAUDE.md\nhacked\nEOF", 'protected path CLAUDE.md'],
+    ['echo x > "$(pwd)/CLAUDE.md"', 'variable or substituted paths'],
+    [`echo pwned > .claude/hooks/guard-bash.sh\n${'#AAAA\n'.repeat(30_000)}`, 'too long'],
+    ['npx tsx scripts/agent/escalate.ts "x"\ngit push --force origin main', 'force-pushing'],
+    ['echo hacked > CLAUDE.md\nnpx tsx scripts/agent/escalate.ts "x"', 'protected path CLAUDE.md'],
+    [
+      'npx tsx scripts/agent/escalate.ts "x"\nnpm run replay:record -- tests/replays/skeleton-01-par.json --update',
+      'physics-change',
+    ],
     ['echo "{}" | tee tests/replays/skeleton-01-par.json', 'golden replay'],
     ['npm run replay:record -- tests/replays/skeleton-01-par.json --update', 'physics-change'],
     ['npx tsx scripts/agent/escalate.ts "x"; git push', 'git push'],
+    ['find . -maxdepth 0 -exec node -e "1" \\;', 'find may only search'],
+    ['find dist -delete', 'find may only search'],
+    ['find . -name x -execdir sh -c "true" {} +', 'find may only search'],
+    ['echo hacked > src/../CLAUDE.md', 'protected path CLAUDE.md'],
+    ['cp evil.json a/../.claude/settings.json', 'protected path .claude/settings.json'],
+    ['echo hacked > "$PWD/CLAUDE.md"', 'protected path CLAUDE.md'],
+    ['rm -rf ./node_modules/.vite', 'rm -r'],
+    ['echo "$X" > notes.txt', 'variable or substituted paths'],
+    ['cp evil.js node_modules/zod/index.js', 'protected path node_modules/zod/index.js'],
+    ['echo x > .git/hooks/pre-commit', 'protected path .git/hooks/pre-commit'],
+    ['cp /tmp/fp .agent/.state/check-pass', 'protected path .agent/.state/check-pass'],
   ])('blocks: %s', (command, reason) => {
     const r = runHook('guard-bash.sh', bash(command), worker);
     expect(r.code).toBe(2);
@@ -249,8 +309,17 @@ describe('require-check.sh (Stop, worker only) and stamp-check.sh', () => {
   git('init', '-q');
   writeFileSync(join(repo, '.gitignore'), 'ignored/\n');
   writeFileSync(join(repo, 'a.ts'), 'export const a = 1;\n');
+  const commit = () => {
+    git('add', '-A');
+    git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'x');
+  };
+  commit();
   const env = { ...worker, AGENT_STATE_DIR: state };
   const stop = () => runHook('require-check.sh', { hook_event_name: 'Stop' }, env, repo);
+  const stamp = (step: 'start' | 'pass') =>
+    spawnSync('bash', [join(HOOKS, 'stamp-check.sh'), step], {
+      env: { ...process.env, CLAUDE_PROJECT_DIR: repo, AGENT_STATE_DIR: state },
+    });
 
   it('only applies to the worker', () => {
     expect(
@@ -268,20 +337,27 @@ describe('require-check.sh (Stop, worker only) and stamp-check.sh', () => {
 
   it('blocks stopping after an edit until npm run check has passed on exactly those files', () => {
     writeFileSync(join(repo, 'a.ts'), 'export const a = 2;\n');
+    commit();
     const r = stop();
     expect(r.code).toBe(2);
     expect(r.stderr).toContain('run npm run check and fix failures, or escalate');
 
-    const start = spawnSync('bash', [join(HOOKS, 'stamp-check.sh'), 'start'], {
-      env: { ...process.env, CLAUDE_PROJECT_DIR: repo, AGENT_STATE_DIR: state },
-    });
-    expect(start.status).toBe(0);
+    expect(stamp('start').status).toBe(0);
     expect(stop().code).toBe(2); // started but not passed
+    expect(stamp('pass').status).toBe(0);
+    expect(stop().code).toBe(0);
+  });
 
-    const pass = spawnSync('bash', [join(HOOKS, 'stamp-check.sh'), 'pass'], {
-      env: { ...process.env, CLAUDE_PROJECT_DIR: repo, AGENT_STATE_DIR: state },
-    });
-    expect(pass.status).toBe(0);
+  it('refuses to stop with uncommitted or untracked changes, even if the check passed on them', () => {
+    writeFileSync(join(repo, 'a.ts'), 'export const a = 4;\n');
+    writeFileSync(join(repo, 'b.ts'), 'export const b = 1;\n');
+    stamp('start');
+    stamp('pass');
+    const r = stop();
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('commit every change before stopping');
+    expect(r.stderr).toContain('b.ts');
+    commit();
     expect(stop().code).toBe(0);
   });
 
@@ -289,19 +365,16 @@ describe('require-check.sh (Stop, worker only) and stamp-check.sh', () => {
     mkdirSync(join(repo, 'ignored'), { recursive: true });
     writeFileSync(join(repo, 'ignored/coverage.json'), '{}');
     expect(stop().code).toBe(0);
-    writeFileSync(join(repo, 'b.ts'), 'export const b = 1;\n');
+    writeFileSync(join(repo, 'c.ts'), 'export const c = 1;\n');
     expect(stop().code).toBe(2);
+    commit();
+    expect(stop().code).toBe(2); // committed, but the check never ran on it
   });
 
   it('is not fooled by committing: the fingerprint tracks content, not commits', () => {
-    spawnSync('bash', [join(HOOKS, 'stamp-check.sh'), 'start'], {
-      env: { ...process.env, CLAUDE_PROJECT_DIR: repo, AGENT_STATE_DIR: state },
-    });
-    spawnSync('bash', [join(HOOKS, 'stamp-check.sh'), 'pass'], {
-      env: { ...process.env, CLAUDE_PROJECT_DIR: repo, AGENT_STATE_DIR: state },
-    });
-    git('add', '-A');
-    git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'x');
+    stamp('start');
+    stamp('pass');
+    commit();
     expect(stop().code).toBe(0);
   });
 
@@ -314,6 +387,64 @@ describe('require-check.sh (Stop, worker only) and stamp-check.sh', () => {
     });
     expect(stop().code).toBe(0);
     expect(readFileSync(join(repo, '.agent/out/escalation.md'), 'utf8')).toContain('criterion 2');
+  });
+});
+
+describe('hook wiring in .claude/settings.json', () => {
+  const settings = JSON.parse(readFileSync(join(ROOT, '.claude/settings.json'), 'utf8')) as {
+    hooks: Record<string, { hooks: { command: string }[] }[]>;
+  };
+  const commands = Object.values(settings.hooks).flatMap((entries) =>
+    entries.flatMap((e) => e.hooks.map((h) => h.command)),
+  );
+
+  it('wires every guardrail hook', () => {
+    for (const script of [
+      'session-start.sh',
+      'protect-paths.sh',
+      'guard-bash.sh',
+      'require-check.sh',
+    ]) {
+      expect(commands.some((c) => c.includes(`/.claude/hooks/${script}"`))).toBe(true);
+    }
+    // A missing or non-executable script exits 126/127, which Claude Code would treat as "allow".
+    for (const command of commands) expect(command).toMatch(/ \|\| exit 2$/);
+  });
+
+  it('checks AGENT_MODE before running a script, so a broken hook can never block the owner', () => {
+    const broken = join(scratch, 'broken-project');
+    mkdirSync(join(broken, '.claude/hooks'), { recursive: true });
+    for (const command of commands) {
+      const script = /hooks\/([\w-]+\.sh)/.exec(command)?.[1] ?? '';
+      writeFileSync(join(broken, '.claude/hooks', script), 'if then fi ((( syntax error\n', {
+        mode: 0o755,
+      });
+      const run = (env: Record<string, string>) =>
+        spawnSync('bash', ['-c', command], {
+          input: '{}',
+          env: { PATH: process.env['PATH'], CLAUDE_PROJECT_DIR: broken, ...env },
+        });
+      expect(run({}).status, `${script} outside agent mode`).toBe(0);
+      expect(run({ AGENT_MODE: 'worker' }).status, `${script} in agent mode`).toBe(2);
+    }
+  });
+
+  it('blocks in agent mode when a hook script is missing (e.g. removed by switching commits)', () => {
+    const empty = join(scratch, 'no-hooks-project');
+    mkdirSync(empty, { recursive: true });
+    for (const command of commands) {
+      const run = (env: Record<string, string>) =>
+        spawnSync('bash', ['-c', command], {
+          input: '{}',
+          env: { PATH: process.env['PATH'], CLAUDE_PROJECT_DIR: empty, ...env },
+        });
+      expect(run({}).status).toBe(0);
+      expect(run({ AGENT_MODE: 'worker' }).status).toBe(2);
+    }
+  });
+
+  it.each(readdirSync(HOOKS).filter((f) => f.endsWith('.sh')))('%s parses (bash -n)', (script) => {
+    expect(spawnSync('bash', ['-n', join(HOOKS, script)]).status).toBe(0);
   });
 });
 

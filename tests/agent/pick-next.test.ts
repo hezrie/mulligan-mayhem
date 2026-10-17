@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
+  circuitOpen,
+  loadSnapshot,
+  orphanedTickets,
   pickNext,
   pickSpecific,
   ticketOfPr,
   type Snapshot,
 } from '../../scripts/agent/pick-next.ts';
-import type { RunLogEntry } from '../../scripts/agent/run-log.ts';
-import type { PullRequest, Ticket } from '../../scripts/agent/tracker/types.ts';
+import { formatRunLogComment, type RunLogEntry } from '../../scripts/agent/run-log.ts';
+import type { PullRequest, Ticket, Tracker } from '../../scripts/agent/tracker/types.ts';
 
 const NOW = new Date('2026-10-20T15:00:00Z');
 const config = { wipLimit: 1, maxTicketsStartedPerDay: 6 };
@@ -37,14 +40,36 @@ function pr(number: number, headRef: string, extra: Partial<PullRequest> = {}): 
     labels: [],
     reviewDecision: 'REVIEW_REQUIRED',
     closesIssues: [],
+    author: 'mm-agent[bot]',
+    isCrossRepository: false,
     lastCommitAt: '2026-10-10T00:00:00Z',
-    lastChangesRequestedAt: '2026-10-11T00:00:00Z',
+    latestReviews: [],
     ...extra,
   };
 }
 
+/** The reviewer agent's standing "changes requested" (after the PR's last commit). */
+const BOT_CHANGES = {
+  latestReviews: [
+    {
+      author: 'github-actions[bot]',
+      authorAssociation: 'NONE',
+      state: 'CHANGES_REQUESTED',
+      submittedAt: '2026-10-11T00:00:00Z',
+    },
+  ],
+};
+
 function snap(partial: Partial<Snapshot>): Snapshot {
-  return { tickets: [], pullRequests: [], issueStates: new Map(), runLog: [], ...partial };
+  return {
+    tickets: [],
+    pullRequests: [],
+    issueStates: new Map(),
+    runLog: [],
+    runLogFound: true,
+    agentLogin: 'mm-agent[bot]',
+    ...partial,
+  };
 }
 
 function started(
@@ -207,7 +232,7 @@ describe('pickNext finish-before-start', () => {
     const s = snap({
       tickets: [ticket(4, ['status:in-review', 'size:S']), ticket(5, [...READY_S, 'priority:P0'])],
       pullRequests: [
-        pr(20, 'agent/4-sand', { reviewDecision: 'CHANGES_REQUESTED', closesIssues: [4] }),
+        pr(20, 'agent/4-sand', { reviewDecision: 'CHANGES_REQUESTED', ...BOT_CHANGES }),
       ],
     });
     expect(pickNext(s, config, NOW)).toEqual({
@@ -226,16 +251,12 @@ describe('pickNext finish-before-start', () => {
         ticket(3, ['status:in-review', 'size:S']),
       ],
       pullRequests: [
-        pr(30, 'agent/2-x', {
-          reviewDecision: 'CHANGES_REQUESTED',
-          createdAt: '2026-10-01T00:00:00Z',
-        }),
-        pr(31, 'feature/human', { reviewDecision: 'CHANGES_REQUESTED', closesIssues: [1] }),
-        pr(32, 'agent/1-y', { reviewDecision: 'CHANGES_REQUESTED', isDraft: true }),
-        pr(33, 'agent/3-z', {
-          reviewDecision: 'CHANGES_REQUESTED',
-          createdAt: '2026-10-05T00:00:00Z',
-        }),
+        pr(30, 'agent/2-x', { ...BOT_CHANGES, createdAt: '2026-10-01T00:00:00Z' }),
+        pr(31, 'feature/human', { ...BOT_CHANGES, closesIssues: [1] }),
+        pr(32, 'agent/1-y', { ...BOT_CHANGES, isDraft: true }),
+        pr(34, 'agent/1-w', { ...BOT_CHANGES, isCrossRepository: true, author: 'stranger' }),
+        pr(35, 'agent/1-v', { ...BOT_CHANGES, author: 'other-app[bot]' }),
+        pr(33, 'agent/3-z', { ...BOT_CHANGES, createdAt: '2026-10-05T00:00:00Z' }),
       ],
     });
     expect(pickNext(s, { ...config, wipLimit: 5 }, NOW)).toMatchObject({
@@ -249,11 +270,7 @@ describe('pickNext finish-before-start', () => {
     const s = snap({
       tickets: [ticket(4, ['status:in-review', 'size:S']), ticket(5, READY_S)],
       pullRequests: [
-        pr(20, 'agent/4-sand', {
-          reviewDecision: 'CHANGES_REQUESTED',
-          lastChangesRequestedAt: '2026-10-11T00:00:00Z',
-          lastCommitAt: '2026-10-11T00:30:00Z',
-        }),
+        pr(20, 'agent/4-sand', { ...BOT_CHANGES, lastCommitAt: '2026-10-11T00:30:00Z' }),
       ],
     });
     expect(pickNext(s, config, NOW)).toMatchObject({
@@ -262,10 +279,40 @@ describe('pickNext finish-before-start', () => {
     });
   });
 
-  it('links PRs to tickets by "Closes #N", falling back to the agent/<N>-slug branch', () => {
-    expect(ticketOfPr(pr(1, 'agent/12-sand', { closesIssues: [12] }))).toBe(12);
-    expect(ticketOfPr(pr(1, 'agent/12-sand'))).toBe(12);
-    expect(ticketOfPr(pr(1, 'random'))).toBeNull();
+  it('links PRs to tickets by the agent/<N>-slug branch only (the body is LLM-written)', () => {
+    expect(ticketOfPr(pr(1, 'agent/12-sand', { closesIssues: [2] }))).toBe(12);
+    expect(ticketOfPr(pr(1, 'random', { closesIssues: [12] }))).toBeNull();
+  });
+
+  it('starts fix passes for the reviewer agent and maintainers, never for strangers', () => {
+    const review = (author: string, authorAssociation: string) => ({
+      latestReviews: [
+        {
+          author,
+          authorAssociation,
+          state: 'CHANGES_REQUESTED',
+          submittedAt: '2026-10-11T00:00:00Z',
+        },
+      ],
+    });
+    const tickets = [ticket(4, ['status:in-review', 'size:S'])];
+    const pick = (extra: Partial<PullRequest>) =>
+      pickNext(snap({ tickets, pullRequests: [pr(20, 'agent/4-sand', extra)] }), config, NOW);
+    expect(pick(review('hezrie', 'OWNER'))).toMatchObject({ issue: 4, mode: 'fix' });
+    expect(pick(review('github-actions[bot]', 'NONE'))).toMatchObject({ issue: 4, mode: 'fix' });
+    expect(pick(review('drive-by', 'NONE'))).toMatchObject({ issue: null });
+    expect(pick(review('drive-by', 'CONTRIBUTOR'))).toMatchObject({ issue: null });
+  });
+
+  it('never starts a second PR for a ticket that already has an open agent PR', () => {
+    const s = snap({
+      tickets: [ticket(4, READY_S)],
+      pullRequests: [pr(20, 'agent/4-sand')],
+    });
+    expect(pickNext(s, { ...config, wipLimit: 5 }, NOW)).toMatchObject({
+      issue: null,
+      reason: expect.stringContaining('already has an open agent PR #20') as string,
+    });
   });
 });
 
@@ -299,8 +346,57 @@ describe('pickSpecific (manual dispatch)', () => {
   it('runs a fix pass when the requested ticket has changes requested', () => {
     const s = snap({
       tickets: [ticket(4, ['status:in-review', 'size:S'])],
-      pullRequests: [pr(20, 'agent/4-x', { reviewDecision: 'CHANGES_REQUESTED' })],
+      pullRequests: [pr(20, 'agent/4-x', BOT_CHANGES)],
     });
     expect(pickSpecific(s, 4)).toMatchObject({ mode: 'fix', pr: 20 });
+  });
+});
+
+describe('safety stops', () => {
+  it('fails closed when the run log issue is missing (the daily cap could not be enforced)', () => {
+    const s = snap({ tickets: [ticket(1, READY_S)], runLogFound: false });
+    expect(pickNext(s, config, NOW)).toMatchObject({
+      issue: null,
+      reason: expect.stringContaining('run log issue') as string,
+    });
+  });
+
+  it('opens the circuit after 3 consecutive infrastructure failures, and closes after a real run', () => {
+    const infra = (n: number): RunLogEntry => ({ ...started(n), outcome: 'infra-failure' });
+    expect(circuitOpen([infra(1), infra(2)])).toBe(false);
+    expect(circuitOpen([started(1), infra(2), infra(3), infra(4)])).toBe(true);
+    expect(circuitOpen([infra(2), infra(3), infra(4), started(5)])).toBe(false);
+    const s = snap({ tickets: [ticket(9, READY_S)], runLog: [infra(1), infra(2), infra(3)] });
+    expect(pickNext(s, config, NOW)).toMatchObject({
+      issue: null,
+      reason: expect.stringContaining('circuit breaker') as string,
+    });
+    expect(pickSpecific(s, 9).issue).toBe(9); // a manual dispatch is the owner's reset
+  });
+
+  it('finds tickets orphaned in status:in-progress', () => {
+    const s = { tickets: [ticket(1, ['status:in-progress', 'size:S']), ticket(2, READY_S)] };
+    expect(orphanedTickets(s).map((t) => t.number)).toEqual([1]);
+  });
+});
+
+describe('loadSnapshot trusts only the bot in the public run log', () => {
+  it('ignores run-log entries posted by anyone else', async () => {
+    const entry = formatRunLogComment(started(1));
+    const tracker = {
+      listOpenTickets: () => Promise.resolve([]),
+      listOpenPullRequests: () => Promise.resolve([]),
+      findOpenTicketByLabel: () => Promise.resolve(ticket(500, ['meta:run-log'])),
+      issueStates: () => Promise.resolve(new Map()),
+      listComments: () =>
+        Promise.resolve([
+          { id: 1, body: entry, author: 'mulligan-mayhem-agent[bot]', createdAt: '' },
+          { id: 2, body: entry, author: 'random-stranger', createdAt: '' },
+          { id: 3, body: entry, author: 'other-app[bot]', createdAt: '' },
+        ]),
+    } as unknown as Tracker;
+    const s = await loadSnapshot(tracker, 'meta:run-log', ['mulligan-mayhem-agent[bot]']);
+    expect(s.runLog).toHaveLength(1);
+    expect(s.runLogFound).toBe(true);
   });
 });

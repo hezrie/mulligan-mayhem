@@ -13,7 +13,7 @@
 | 4     | Guardrails             | ✅ Done                           |
 | 5     | CI/CD + repo + Pages   | ✅ Done                           |
 | 6     | Ticket system          | ✅ Done                           |
-| 7     | Agent workflows        | ⏳ (needs secrets from you first) |
+| 7     | Agent workflows        | ✅ Done (after a security review) |
 | 8     | Seed backlog & dry run | ⏳                                |
 
 ## Decisions (Phase 0)
@@ -46,6 +46,7 @@ Latest relevant packages: vite 8.3, vitest 5.0 (+ coverage-v8), eslint 10.12, ty
    - Why: "permissions over instructions". The agent can't push to `main` or merge because it has no credential that can do so, whatever the prompt says.
    - The brief's `permissions.allow` list (`gh pr create` and the rest) stays in `.claude/settings.json` for local and interactive use. CI narrows it further.
    - Side effect: the **Claude GitHub App is optional**. It's only needed if you also want `@claude` mentions.
+   - **Hardened in Phase 7: the LLM runs in its own job.** On GitHub-hosted runners every step of a job can read all of that job's secrets, so a "deterministic step" in the _same_ job as Claude isn't a boundary. Each agent workflow is split into _trusted job → LLM job → trusted job_. The LLM job never holds the App token, and its output reaches the next job only as data: a `git bundle`, `result.json` and a few text files. See Phase 7.
 3. **GitHub App instead of a PAT for the `AGENT_BOT_TOKEN` role.** Secrets are `AGENT_APP_ID` + `AGENT_APP_PRIVATE_KEY`. Each job mints a short-lived token with `actions/create-github-app-token` and exposes it as `AGENT_BOT_TOKEN`, so the brief's terminology still holds. The App gets no Workflows permission, so **GitHub itself rejects any bot push that touches `.github/workflows/`**.
 4. **Approvals come from `github-actions[bot]`.** GitHub forbids approving your own PR, and PRs are authored by the App, so the reviewer submits its review with `GITHUB_TOKEN`. That needs the repo setting "Allow GitHub Actions to create and approve pull requests", which I'll enable via the API.
 5. **The merger is a reusable workflow (`workflow_call`).** The reviewer job invokes it after approving, and it can also be run manually (`workflow_dispatch`). Why: events created with `GITHUB_TOKEN` don't trigger workflows, and `workflow_run` chains are capped at 3 levels.
@@ -58,13 +59,14 @@ Latest relevant packages: vite 8.3, vitest 5.0 (+ coverage-v8), eslint 10.12, ty
     - `npm run check` stamps `.agent/.state/last-check-pass` as its final step
     - `scripts/agent/escalate.ts` stamps `.agent/.state/escalated`
     - the hook blocks stopping unless check-pass is newer than last-edit, or the worker escalated
+    - _Superseded in Phase 4 by a content fingerprint, which catches edits made through Bash too. See Phase 4 → As built._
 11. **Cross-engine determinism.** ESLint bans `Math.sin/cos/tan/atan2/asin/acos/exp/log/pow/hypot/cbrt` in `src/core/**`, and `src/core/math/` provides its own implementations built only from IEEE-exact operations (`+ − × ÷ sqrt`).
     - Why: those built-ins legitimately differ between JS engines (Safari vs Chrome). The Daily Course must be identical on every family phone.
     - Bonus: the Chromium e2e test can assert the **same state hash** as the Node golden replay.
 12. **Layers are enforced by two tools.** ESLint handles banned globals and properties (`Date`, `Math.random`, `window`, `document`, `performance`, …). dependency-cruiser handles the import graph. Neither tool can do both jobs.
 13. **Core's only allowed third-party dependency is `zod`**, used for the hole/course schemas validated at load. dependency-cruiser enforces this allowlist.
 14. **The integrity check catches more than the brief lists, and compares counts per suite.** It also flags `.skipIf`, `.runIf`, `.fails`, Playwright `.fixme`, and `describe.skip`. Counts are compared **separately** for Vitest and Playwright, which is stricter than a combined total: you can't delete e2e tests and pad the count with unit tests. The comparison base is the merge-base with `origin/main`, or `HEAD^` when HEAD is main; it's checked out in a temporary git worktree. Vitest is counted from a real `vitest run --reporter=json` (`numTotalTests`), _not_ `vitest list`, because the list collapses each `it.each` table into one entry. Locally with no base, the count check is skipped with a warning; in CI it fails.
-15. **`rm -rf` is also allowed in other build-output dirs** (`coverage/`, `test-results/`, `playwright-report/`), not just `dist/` and `node_modules/`.
+15. **`rm -rf` is allowed only in build-output dirs** (`dist/`, `dist-e2e/`, `coverage/`, `test-results/`, `playwright-report/`, `blob-report/`). The brief also allowed `node_modules/`, but that was removed in Phase 7: an agent that can delete and rebuild `node_modules` can swap the code `npm run check` executes, and `npm install` is blocked anyway.
 16. **Extra label `physics-change`.** The hooks rule references it, but the label list doesn't include it.
 17. **`agent.config.json` gets three extra keys:**
     - `models`: aliases like `opus`/`sonnet`, so you can tune cost per role
@@ -87,20 +89,24 @@ Latest relevant packages: vite 8.3, vitest 5.0 (+ coverage-v8), eslint 10.12, ty
 
 ## How the loop is wired (who holds which credential)
 
+Each workflow is split into separate jobs, each on a fresh runner. Jobs that run Claude hold only a read-only `GITHUB_TOKEN` and `CLAUDE_CODE_OAUTH_TOKEN`, never the App token.
+
 ```
-                      read-only GITHUB_TOKEN            App token (AGENT_BOT_TOKEN)
-                      ─────────────────────            ───────────────────────────
-refiner  (issues)     Claude reads issue, writes   →   step edits issue/labels/creates split issues
-worker   (cron/manual)Claude edits code, runs check→   step pushes agent/<n>-<slug>, opens PR, labels
-reviewer (CI done /   Claude returns JSON verdict  →   step: GITHUB_TOKEN submits review (github-actions[bot]);
-         plan label)                                    App token adds agent-approved / plan:approved
-merger   (called)     no LLM                       →   squash-merge iff CI green ∧ approved ∧ size allowed
-                                                        at autonomyLevel ∧ no protected paths; else comment
-closer   (issue closed) no LLM                     →   summary comment, strip status labels, arch-review counter
-digest   (weekly)     Claude (digest mode)         →   step opens digest issue + rules PR (for you to merge)
+            trusted job (App token)            LLM job (read-only)                  trusted job (fresh App token)
+            ───────────────────────            ───────────────────                  ─────────────────────────────
+refiner     trust gate, export issue      →    Claude rewrites ticket → files  →    edit issue, labels, split children
+worker      pick, label in-progress,      →    Claude edits code, runs check   →    fetch bundle as objects only,
+            export ticket/plan/feedback         → git bundle + result.json          agent-guard, push, PR, labels, run log
+reviewer    (CI finished on agent/* PR)        Claude → JSON verdict           →    review via GITHUB_TOKEN (github-actions[bot]);
+                                                                                     App token labels agent-approved
+plan review                                    Claude → JSON verdict           →    plan:approved + approval marker
+merger      no LLM: squash-merge iff CI green ∧ reviewer approved this SHA ∧ size allowed at autonomyLevel
+            ∧ no protected/golden paths; otherwise one "Ready for human merge" comment per SHA. Hourly sweep.
+closer      no LLM: summary comment, strip status labels, architecture-review counter
+digest      metrics + digest issue        →    Claude edits CLAUDE.md/LESSONS  →    copy only those 2 files, open rules PR
 ```
 
-Every agent workflow starts by exiting early if `vars.AGENT_PAUSED == 'true'`, and every run appends one JSON line to the pinned "🤖 Agent Run Log" issue (role, issue, outcome, attempts, turns, duration, cost, taken from the action's `execution_file`).
+Every agent job honours `vars.AGENT_PAUSED != 'true'`, and every run appends one JSON comment to the pinned "🤖 Agent Run Log" issue #2 (role, issue, outcome, attempts, turns, duration, cost, taken from the action's `execution_file`).
 
 ## Phase plan
 
@@ -317,6 +323,106 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 - **I'll stop here and ask you for the secrets** (checklist below), then run `actionlint` on all workflows.
 - **Exit:** workflows lint-clean; check green; secrets confirmed present (names only).
 
+- **As built:**
+  - **Workflows.** `agent-refine`, `agent-worker`, `agent-review` (PR review + plan review), `agent-merge` (reusable, plus a manual run and an hourly sweep), `agent-close`, `agent-digest`, and `preflight.yml`. Preflight is a by-hand check that the App key, the App's permissions, the run log, the Claude token and the hook canary all work, and it changes nothing.
+  - **Scripts.** All side effects go through `scripts/agent/cli.ts`, one subcommand per workflow step (`pick`, `worker-start`, `work-result`, `worker-finish`, `review-context`, `review-finish`, `merge`, `merge-sweep`, `refine-gate`, `refine-finish`, `digest-report`, `digest-pr`, …). The logic sits behind a `Ctx` with fake trackers in `tests/agent/cli.test.ts`.
+  - **Prompts.** `.agent/prompts/*.md` for every role. A test checks that each one names `CLAUDE.md` and `.agent/LESSONS.md`.
+  - **Workflow invariants are tests** (`tests/guardrails/workflows.test.ts`):
+    - no LLM job holds the App token or any write permission
+    - Claude authenticates with the subscription token only
+    - every job honours the kill switch
+    - checkouts never persist credentials
+    - every Claude step runs under `AGENT_MODE` and is followed by a canary check for that mode
+    - turns and model come from config, and `gh`, network and web tools are denied
+    - only allow-listed actions are used
+    - only the review submit job (no LLM) may write PRs
+- **Security review.** Before merging, an adversarial multi-agent review of the first version found **35 issues**. All are fixed or documented:
+  - **Critical: the job split.** In v1, Claude and the App-token steps shared a job, and any step can read a job's secrets. Now each workflow is _trusted job → LLM job → trusted job_:
+    - The worker's commits travel as a `git bundle` artifact. The finish job fetches it into `refs/agent/work` as objects only and never checks it out or runs it.
+    - Every git call there runs with hooks and global/system config disabled.
+    - `agent-guard` re-checks the diff before the push. The token is passed as an `http.extraheader`.
+    - The digest job copies back only `CLAUDE.md` and `.agent/LESSONS.md`.
+  - **Integrity of inputs:**
+    - Plans and review feedback count only when the bot wrote them (an `mm:approved-plan:<id>` binding).
+    - The run log trusts only bot-authored comments.
+    - Review runs only for same-repo PRs authored by the bot, and its verdict is pinned to the reviewed SHA (`--sha`). Superseded and duplicate reviews are skipped.
+  - **Robustness:**
+    - orphaned `in-progress` tickets are recovered
+    - `worker-finish` is wrapped so any crash ends in `status:needs-human`
+    - retries use unique branches (`-r<run id>`)
+    - fix passes merge `main` first
+    - resumable refiner splits
+    - concurrency groups on every workflow
+    - `waitForChecks` before review and merge
+    - labels are applied before the approval
+    - "Ready for human merge" is commented once per SHA
+    - an hourly merge sweep
+  - **Failure accounting:** a new `infra-failure` outcome, a circuit breaker after 3 in a row, turn-limit runs classified as `failed`, the picker failing closed when the run log is missing, and a stricter first-pass window for the autonomy metrics.
+  - **Guardrails:**
+    - `find -exec/-delete` is blocked
+    - `.git/**`, `node_modules/**` and `.agent/.state/**` are protected for agents
+    - `node_modules` is out of the `rm -rf` allowance
+    - writes through `$PWD`/`~` paths are resolved
+    - any golden-replay change, even a new file, needs you, because CODEOWNERS covers `tests/replays/`
+  - **Owner safety:** every hook command in `.claude/settings.json` is gated on `AGENT_MODE`, so a broken hook can never block your own sessions. This happened once during this phase: a syntax error locked out my local Bash until it was fixed. A test now pins the gating.
+- **Second review.** A second adversarial pass over the fixed version confirmed **40 more issues** (3 high, 10 medium, 27 low; 6 other reports were refuted). All are fixed, each with a test:
+  - **High:**
+    - `checkPassed` was always false once the agent had commits: the result was written into the checkout before it was fingerprinted. That would have broken the very first dry run.
+    - Package-manager config (`.npmrc`) and nested `node_modules/` were not protected, yet every trusted job runs `npx`. Both are protected now, and so are nested `CLAUDE.md` and `.claude/` folders.
+    - The PR reviewer ran repo tooling from the PR's own tree. Its workspace is now `main`, and the PR is unpacked under `pr/` as plain files.
+  - **Credentials:** a failed push could have posted the App token, base64-encoded in git's command line, in a public comment. Git config now travels in the environment, and every error bound for a comment or the run log is redacted.
+  - **Hooks:**
+    - a missing hook script now blocks (`|| exit 2`)
+    - the ERR trap really fires inside hooks
+    - a broken config list blocks
+    - an escalate line can't smuggle a second line past the guard
+    - switching or checking out other commits is blocked
+    - the Stop hook requires everything to be committed
+  - **The loop never wedges:**
+    - in-review tickets whose PR was closed go to you
+    - a ready ticket with an open PR goes to review
+    - an hourly review sweep catches dropped review events
+    - one bad `Blocked by #N` no longer stops the picker
+    - open PRs are paginated
+  - **Trust:**
+    - agent PRs are only the bot's own PRs from this repo
+    - the ticket comes from the branch name, never the LLM-written PR body
+    - other closing keywords in the PR body are neutralized, so merging can't close the run log
+    - the "Ready for human merge" dedupe only counts the bot's comments
+  - **Your reviews count:** "Request changes" from you (or the reviewer agent) starts a fix pass that works from your review and its line comments.
+  - **Accounting:**
+    - CI-red notices don't block a real review after a green re-run, and the attempt isn't charged twice
+    - attempt bumps survive a crash
+    - finish-step crashes count toward the daily cap
+    - the fix-mode merge commit isn't counted as agent work
+    - reverts are detected in any style
+    - re-closed tickets count once
+    - autonomy metrics only trust PRs whose authors were checked
+  - **Runtime:**
+    - fix passes skip merging `main` when main changed workflow files, which the App couldn't push
+    - check runs are judged by their newest run
+    - LLM jobs re-check the kill switch, and a paused run re-queues without counting anything
+- **Third pass.** A final check of those fixes confirmed **22 more** (1 high, 4 medium, 17 low). Several were problems the second round itself introduced. All are fixed, each with a test:
+  - **High:** a nested `package.json` (Node's package self-reference) or a symlinked `scripts/node_modules` could still swap the code trusted jobs run. Now `**/package.json`, the bare names `**/node_modules`, `**/.claude` and `.gitattributes` are protected, and agent PRs may not contain symlinks or submodules: `agent-guard` and the finish job read file modes.
+  - **The review sweep is now a trusted job with a bound.** It records each retry. After 2 retries for a commit or plan, the ticket goes to you. It skips heads whose CI is still red, and keeps scanning past stuck PRs.
+  - **Simpler attempt accounting:** the attempt is counted before a change request is submitted, so a crash can only bring a ticket to you sooner. The marker-based reconciliation, which could undo your "fresh budget" reset, is gone.
+  - **Hooks:**
+    - routine commands (`2>&1`, `$?`, Claude Code's heredoc commits) are no longer falsely blocked
+    - commands over 12 KB are refused (large pipes could make a check read as "no match")
+    - unreadable directories no longer trip the error trap
+  - **Smaller fixes:**
+    - reviews of the PR use its exact commit (its `.gitattributes` can't hide or rewrite files)
+    - auto-merges use an explicit squash message, not the agent's commit messages
+    - a later plain comment doesn't hide a maintainer's "request changes"
+    - a fix pass whose only change is merging main still ships
+    - a fix pass whose branch predates a workflow change on main comes to you
+    - LLM text can't plant `<!-- mm:… -->` control markers
+    - the PR-body regex is linear
+- **Deviations:**
+  - **Claude auth is the subscription token only** (your choice). Workflows pass `claude_code_oauth_token` and never `anthropic_api_key`. A test enforces this. The `ANTHROPIC_API_KEY` secret is unused and can be deleted.
+  - **The App slug is a repo variable**, `AGENT_APP_SLUG`. It feeds `allowed_bots` and the trusted-author checks.
+  - **Residual risk, accepted and documented in `docs/WORKFLOW.md`:** the Claude OAuth token is present in the LLM job, because Claude needs it. A malicious ticket could at worst spend your subscription quota until the run's turn and time limits hit. It can't push, merge or label.
+
 ### Phase 8: Seed backlog & dry run
 
 - Create 10–12 DoR-compliant tickets with dependencies, splitting the Daily Course generator into "seeded generator + schema" and "solvability bot + par+3 gate". Tickets 1–3 get `status:ready`; the rest get `status:proposed`.
@@ -327,7 +433,7 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 
 **Now**
 
-- [ ] Review and approve this plan. Approving also OKs:
+- [x] Review and approve this plan. Approving also OKs:
   - the Phase 1 downloads
   - creating the public repo
   - `gh auth switch --user hezrie`
@@ -336,17 +442,18 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 
 **Before Phase 7 (I'll stop and walk you through it)**
 
-- [ ] **Create the GitHub App** (Settings → Developer settings → GitHub Apps → New):
+- [x] **Create the GitHub App** (Settings → Developer settings → GitHub Apps → New):
   - Name: `mulligan-mayhem-agent`
   - Homepage: the repo URL
   - Webhook: off
   - Repository permissions: **Contents RW, Issues RW, Pull requests RW, Metadata R, Actions R**, and **Workflows: none**
   - Install it on `hezrie/mulligan-mayhem` only
-- [ ] Add the secrets yourself. I won't handle secret values.
+- [x] Add the secrets yourself. I won't handle secret values.
   - `gh secret set AGENT_APP_ID` and `gh secret set AGENT_APP_PRIVATE_KEY < key.pem`
-- [ ] **Claude auth**, pick one:
+- [x] **Claude auth**, pick one. Chosen: the subscription token.
   - install the Claude CLI, run `claude setup-token`, then `gh secret set CLAUDE_CODE_OAUTH_TOKEN`. This uses your subscription's limits.
   - or `gh secret set ANTHROPIC_API_KEY`. This is pay-per-token, with exact cost in the digest.
+- [ ] **Rotate the App private key.** Its contents were shared in chat. Generate a new key on the App page and `gh secret set AGENT_APP_PRIVATE_KEY` from it. Then delete the old keys there, delete the `.pem` files in `~/Downloads`, and optionally run `gh secret delete ANTHROPIC_API_KEY`.
 - [ ] _(Optional)_ Install the Claude GitHub App (https://github.com/apps/claude). It's only needed for `@claude` mentions; the loop doesn't use it.
 
 **Ongoing**
@@ -363,6 +470,7 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 ## Known risks (tracked; mitigations in place or planned)
 
 - **Prompt injection via public issues.** Mitigated by the trust gate, read-only LLM credentials, narrow tools, and treating issue text as untrusted data.
+- **The Claude OAuth token sits in the LLM job.** It's unavoidable, because Claude needs it. The worst case is spent subscription quota, bounded by turns, timeouts, the daily cap and the kill switch. The App token is never there.
 - **Hook regexes are best-effort.** The real walls are `agent-guard`, CODEOWNERS and the App's missing Workflows permission.
 - **Hooks silently not loading in CI.** Mitigated by the canary, which fails the run.
 - **Runaway cost.** Capped by `--max-turns`, job timeouts, concurrency 1, the daily cap and the kill switch.
@@ -378,3 +486,4 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 - 2026-10-17: Phase 4 complete: hooks + settings + config + CODEOWNERS + PR template; 320 unit tests (77 hook cases).
 - 2026-10-17: Phase 5 complete: repo live and public, CI green on GitHub, Pages deployed, branch protection applied.
 - 2026-10-17: Phase 6 complete: labels live, issue forms, Tracker + GitHub adapter, picker, run log #2; protection tightened to 1 approval.
+- 2026-10-17: Phase 7 complete: six agent workflows + preflight; three adversarial passes (35 + 40 + 22 findings) led to the trusted/LLM job split, the main-only reviewer workspace and a bounded review sweep; subscription-only Claude auth; 659 unit tests.

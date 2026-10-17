@@ -44,7 +44,8 @@ export function shippedTickets(entries: readonly RunLogEntry[]): ShippedTicket[]
       closedAt: e.startedAt,
       firstPass: !troubled.has(e.issue),
     }))
-    .sort((a, b) => b.closedAt.localeCompare(a.closedAt));
+    .sort((a, b) => b.closedAt.localeCompare(a.closedAt))
+    .filter((t, i, all) => all.findIndex((o) => o.issue === t.issue) === i); // reopened + re-closed counts once
 }
 
 export interface WeeklyMetrics {
@@ -73,7 +74,9 @@ export function weeklyMetrics(
   reverts: number,
 ): WeeklyMetrics {
   const week = within(all, now, 7);
-  const shipped = shippedTickets(week);
+  const weekStart = now.getTime() - 7 * DAY_MS;
+  // First-pass status looks at the ticket's whole history, not just this week's entries.
+  const shipped = shippedTickets(all).filter((t) => new Date(t.closedAt).getTime() > weekStart);
   const started = new Set(
     week
       .filter(
@@ -125,6 +128,17 @@ export interface AutonomyInput {
   readonly reverts14d: number;
   /** PR numbers where someone other than the bot pushed commits before merge. */
   readonly humanEditedPrs: ReadonlySet<number>;
+  /** PRs whose commit authors were actually checked; any other PR never counts as clean. */
+  readonly checkedPrs?: ReadonlySet<number>;
+}
+
+/** The S and M windows recommendAutonomy judges: exactly the PRs whose authors must be checked. */
+export function prsToCheck(entries: readonly RunLogEntry[]): number[] {
+  const shipped = shippedTickets(entries);
+  return [
+    ...shipped.filter((t) => t.size === 'S').slice(0, 15),
+    ...shipped.filter((t) => t.size === 'M').slice(0, 6),
+  ].flatMap((t) => (t.pr === null ? [] : [t.pr]));
 }
 
 export interface AutonomyRecommendation {
@@ -156,7 +170,8 @@ export function recommendAutonomy(input: AutonomyInput): AutonomyRecommendation 
     ? [...escalated].filter((i) => started.has(i)).length / started.size
     : 0;
   const clean = (t: ShippedTicket): boolean =>
-    t.firstPass && (t.pr === null || !input.humanEditedPrs.has(t.pr));
+    t.firstPass &&
+    (t.pr === null || ((input.checkedPrs?.has(t.pr) ?? true) && !input.humanEditedPrs.has(t.pr)));
   const shipped = shippedTickets(input.entries);
   const s = shipped.filter((t) => t.size === 'S');
   const m = shipped.filter((t) => t.size === 'M');

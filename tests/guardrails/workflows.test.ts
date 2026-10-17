@@ -39,7 +39,7 @@ const workflows: [string, Workflow][] = readdirSync(DIR)
 const agentWorkflows = workflows.filter(([f]) => f.startsWith('agent-') && f !== 'agent-guard.yml');
 const CLAUDE = 'anthropics/claude-code-action@v1';
 const isClaude = (s: Step): boolean => (s.uses ?? '').startsWith('anthropics/claude-code-action');
-const claudeSteps = agentWorkflows.flatMap(([file, wf]) =>
+const claudeSteps = workflows.flatMap(([file, wf]) =>
   Object.entries(wf.jobs).flatMap(([jobName, job]) =>
     (job.steps ?? [])
       .map((step, index) => ({ file, jobName, job, step, index }))
@@ -93,7 +93,7 @@ describe.each(
   claudeSteps.map(
     (c) => [`${c.file} › ${c.jobName} › ${c.step.name ?? String(c.index)}`, c] as const,
   ),
-)('Claude step %s', (_label, { job, step, index }) => {
+)('Claude step %s', (_label, { file, job, step, index }) => {
   const text = JSON.stringify({ env: step.env, with: step.with });
 
   it('uses the pinned action major and the read-only GITHUB_TOKEN, never the bot App token', () => {
@@ -110,7 +110,7 @@ describe.each(
 
   it('runs under AGENT_MODE (env and settings agree), tolerating failure for bookkeeping', () => {
     const mode = step.env?.['AGENT_MODE'];
-    expect(['worker', 'reviewer', 'refiner', 'digest']).toContain(mode);
+    expect(['worker', 'reviewer', 'refiner', 'digest', 'preflight']).toContain(mode);
     expect(String(step.with?.['settings'])).toContain(`"AGENT_MODE":"${String(mode)}"`);
     expect(step['continue-on-error']).toBe(true);
   });
@@ -121,6 +121,12 @@ describe.each(
     expect(
       later.some((s) => (s.run ?? '').includes(`'^${mode} ' .agent/.state/hooks-active`)),
     ).toBe(true);
+  });
+
+  it('re-checks the kill switch in its own job (it may be pulled while earlier jobs run)', () => {
+    // Preflight is the by-hand check you run while paused, before unpausing.
+    if (file === 'preflight.yml') return;
+    expect(job.if ?? '').toContain("vars.AGENT_PAUSED != 'true'");
   });
 
   it('caps turns from config and denies GitHub CLI, network and web tools', () => {
@@ -136,7 +142,7 @@ describe.each(
 
 describe('all workflows', () => {
   const ALLOWED_ACTIONS = [
-    /^actions\/(checkout|setup-node|cache|upload-artifact|configure-pages|upload-pages-artifact|deploy-pages|create-github-app-token)@v\d+$/,
+    /^actions\/(checkout|setup-node|cache|cache\/restore|upload-artifact|download-artifact|configure-pages|upload-pages-artifact|deploy-pages|create-github-app-token)@v\d+$/,
     /^anthropics\/claude-code-action@v1$/,
     /^docker:\/\/rhysd\/actionlint:\d+\.\d+\.\d+$/,
     /^\.\/\.github\/workflows\/agent-merge\.yml$/,
@@ -163,6 +169,37 @@ describe('all workflows', () => {
       }
     },
   );
+
+  it('trusted jobs (bot App token) receive LLM artifacts outside the checkout, as data', () => {
+    for (const [file, wf] of workflows) {
+      for (const [name, job] of Object.entries(wf.jobs)) {
+        const steps = job.steps ?? [];
+        if (!steps.some((st) => (st.uses ?? '').startsWith('actions/create-github-app-token')))
+          continue;
+        for (const st of steps.filter((x) =>
+          (x.uses ?? '').startsWith('actions/download-artifact'),
+        ))
+          expect(String(st.with?.['path']), `${file}:${name}`).toMatch(
+            /^\$\{\{ runner\.temp \}\}\//,
+          );
+      }
+    }
+  });
+
+  it('the PR reviewer stays on main and only unpacks the PR as files (never checks it out)', () => {
+    const review = workflows.find(([f]) => f === 'agent-review.yml')?.[1].jobs['review'];
+    const steps = review?.steps ?? [];
+    expect(steps.find((st) => (st.uses ?? '').startsWith('actions/checkout'))?.with?.['ref']).toBe(
+      'main',
+    );
+    const runs = steps.map((st) => st.run ?? '').join('\n');
+    expect(runs).not.toMatch(/git[^\n]*\b(switch|checkout|worktree)\b/);
+    expect(runs).toContain('archive --format=tar');
+    const unpack = steps.findIndex((st) => (st.run ?? '').includes('archive --format=tar'));
+    const prep = steps.findIndex((st) => (st.run ?? '').includes('prompt --name reviewer-pr'));
+    expect(prep).toBeGreaterThan(-1);
+    expect(prep).toBeLessThan(unpack); // prompt and schema come from main, before the PR lands
+  });
 
   it('only the review submit job may write pull requests, and it runs no LLM', () => {
     const writers = workflows.flatMap(([file, wf]) =>

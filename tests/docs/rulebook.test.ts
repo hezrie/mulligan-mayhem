@@ -50,6 +50,15 @@ describe('rulebook', () => {
     }
   });
 
+  it.each(readdirSync(join(ROOT, '.agent/prompts')).filter((f) => f.endsWith('.md')))(
+    'agent prompt %s tells the agent to read CLAUDE.md and .agent/LESSONS.md first',
+    (prompt) => {
+      const text = readFileSync(join(ROOT, '.agent/prompts', prompt), 'utf8');
+      expect(text).toContain('`CLAUDE.md`');
+      expect(text).toContain('`.agent/LESSONS.md`');
+    },
+  );
+
   it.each(DOCS.map((file) => [relative(ROOT, file), file]))(
     '%s has no broken relative links',
     (_name, file) => {

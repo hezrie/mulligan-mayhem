@@ -15,7 +15,8 @@ Do this, in order:
    and its size (S ≤ ~150 changed lines, M ≤ ~400).
 4. Run `npm run check` and fix failures until it passes. Never weaken, skip, or delete a test, and
    never loosen an assertion to get there.
-5. Commit with a conventional message, e.g. `feat(physics): sand friction (#12)`.
+5. Commit **every** change (`git add -A`, then a conventional message, e.g.
+   `feat(physics): sand friction (#12)`). Only commits are shipped; uncommitted files are lost.
 6. Write the PR description to `.agent/out/pr-body.md`, following `.github/pull_request_template.md`.
    Include a table mapping every acceptance criterion to its test (file › test name), plus
    follow-ups and reviewer notes. For UI changes, say which e2e screenshots show it.
@@ -25,6 +26,7 @@ Do this, in order:
 You must not:
 
 - push, open PRs, or touch labels (the workflow does that)
+- switch branches or check out other commits (the workflow prepared your branch)
 - edit protected paths or add dependencies
 - change what a test means
 
@@ -36,4 +38,5 @@ Escalate instead of guessing. Stop and run `npx tsx scripts/agent/escalate.ts "<
 - a product decision is missing
 - a test is flaky
 
-You can't finish until `npm run check` has passed on your final files, or you escalated.
+You can't finish until `npm run check` has passed on your final files and they are all committed,
+or you escalated.

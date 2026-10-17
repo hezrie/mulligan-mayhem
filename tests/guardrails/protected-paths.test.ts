@@ -11,9 +11,14 @@ const ROOT = resolve(import.meta.dirname, '../..');
 const config = loadAgentConfig();
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
 
-/** agent.config.json glob → CODEOWNERS path. "dir/**" becomes "/dir/"; anything else gets a leading "/". */
-const toCodeowners = (glob: string): string =>
-  glob.endsWith('/**') ? `/${glob.slice(0, -2)}` : `/${glob}`;
+/**
+ * agent.config.json glob → CODEOWNERS path. "dir/**" becomes "dir/"; root-anchored globs get a
+ * leading "/", while globs starting with a double-star segment (any depth) stay unanchored, as in CODEOWNERS.
+ */
+const toCodeowners = (glob: string): string => {
+  const path = glob.endsWith('/**') ? glob.slice(0, -2) : glob;
+  return path.startsWith('**/') ? path : `/${path}`;
+};
 
 function codeownersEntries(): Map<string, string[]> {
   const entries = new Map<string, string[]>();

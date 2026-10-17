@@ -43,6 +43,37 @@ describe('evaluateChecks', () => {
     ).toMatchObject({ pending: ['agent-guard'] });
   });
 
+  it('judges each check by its newest run (a re-run or a label-triggered run replaces the old one)', () => {
+    const guard = (id: number, startedAt: string, conclusion: string) => ({
+      id,
+      name: 'agent-guard',
+      status: 'completed',
+      conclusion,
+      startedAt,
+    });
+    const runs = [
+      green[0]!,
+      guard(5, '2026-10-20T10:00:00Z', 'failure'), // `opened`, before the PR labels existed
+      guard(6, '2026-10-20T10:01:00Z', 'success'), // `labeled`, with physics-change
+    ];
+    expect(evaluateChecks(runs)).toEqual({ green: true, failing: [], pending: [] });
+    expect(evaluateChecks([...runs, guard(7, '2026-10-20T10:02:00Z', 'failure')]).failing).toEqual([
+      'agent-guard',
+    ]);
+    expect(
+      evaluateChecks([
+        ...runs,
+        {
+          id: 8,
+          name: 'agent-guard',
+          status: 'in_progress',
+          conclusion: null,
+          startedAt: '2026-10-20T10:03:00Z',
+        },
+      ]).pending,
+    ).toEqual(['agent-guard']);
+  });
+
   it('also treats any other failed check as red', () => {
     expect(
       evaluateChecks([
@@ -130,6 +161,7 @@ const pr: PrInfo = {
   draft: false,
   headRef: 'agent/12-sand',
   headSha: SHA,
+  headRepo: 'hezrie/mulligan-mayhem',
   baseRef: 'main',
   labels: ['size:S', 'agent-approved'],
   author: 'mulligan-mayhem-agent[bot]',
@@ -137,6 +169,7 @@ const pr: PrInfo = {
   mergeable: true,
 };
 const approvedReview: Review = {
+  id: 1,
   body: '',
   author: 'github-actions[bot]',
   state: 'APPROVED',
@@ -182,9 +215,13 @@ describe('merge gate', () => {
         input({ files: [{ path: 'tests/replays/skeleton-01-par.json', status: 'M' }] }, 3),
       ),
     ).toMatchObject({ action: 'human' });
+    // CODEOWNERS covers tests/replays/, so even a brand-new replay needs the owner.
     expect(
-      decideMerge(input({ files: [{ path: 'tests/replays/new.json', status: 'A' }] }, 3)).action,
-    ).toBe('merge');
+      decideMerge(input({ files: [{ path: 'tests/replays/new.json', status: 'A' }] }, 3)),
+    ).toMatchObject({
+      action: 'human',
+      reasons: [expect.stringContaining('CODEOWNERS') as string],
+    });
   });
 
   it('waits (no comment) unless CI is green and the reviewer approved the current head', () => {

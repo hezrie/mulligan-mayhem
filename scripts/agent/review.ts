@@ -40,18 +40,34 @@ export interface CiStatus {
   readonly pending: readonly string[];
 }
 
+/**
+ * The newest run of each check name. A check can run several times on one commit (a re-run, or
+ * agent-guard again after labels are added); an older failure must not outlive a newer success.
+ */
+export function latestRunPerName(runs: readonly CheckRun[]): CheckRun[] {
+  const newest = new Map<string, CheckRun>();
+  const order = (r: CheckRun): string =>
+    `${r.startedAt ?? ''}|${String(r.id ?? 0).padStart(16, '0')}`;
+  for (const r of runs) {
+    const seen = newest.get(r.name);
+    if (!seen || order(r) > order(seen)) newest.set(r.name, r);
+  }
+  return [...newest.values()];
+}
+
 export function evaluateChecks(
   runs: readonly CheckRun[],
   required: readonly string[] = REQUIRED_CHECKS,
 ): CiStatus {
   const failing: string[] = [];
   const pending: string[] = [];
+  const latest = latestRunPerName(runs);
   for (const name of required) {
-    const latest = runs.filter((r) => r.name === name);
-    if (latest.length === 0 || latest.some((r) => r.status !== 'completed')) pending.push(name);
-    else if (latest.some((r) => r.conclusion !== 'success')) failing.push(name);
+    const run = latest.find((r) => r.name === name);
+    if (run?.status !== 'completed') pending.push(name);
+    else if (run.conclusion !== 'success') failing.push(name);
   }
-  for (const r of runs) {
+  for (const r of latest) {
     if (!required.includes(r.name) && r.status === 'completed' && r.conclusion === 'failure')
       failing.push(r.name);
   }
@@ -78,11 +94,19 @@ export function enforceConsistency(v: PrVerdict): PrVerdict {
   return v;
 }
 
+/**
+ * LLM text goes into comments the loop later searches for its own `<!-- mm:… -->` markers, so
+ * comment delimiters are removed from it: a verdict can't plant a control marker.
+ */
+export function plain(text: string): string {
+  return text.replace(/<!--|-->/g, '');
+}
+
 function issueList(issues: readonly z.infer<typeof Issue>[]): string {
   return issues
     .map(
       (i, n) =>
-        `${String(n + 1)}. ${i.file ? `\`${i.file}\`: ` : ''}${i.problem}\n   → **Change:** ${i.requiredChange}`,
+        `${String(n + 1)}. ${i.file ? `\`${plain(i.file)}\`: ` : ''}${plain(i.problem)}\n   → **Change:** ${plain(i.requiredChange)}`,
     )
     .join('\n');
 }
@@ -91,7 +115,7 @@ export function prReviewBody(v: PrVerdict, attempt: number, maxAttempts: number)
   const rows = v.criteria
     .map(
       (c) =>
-        `| ${c.satisfied ? '✅' : '❌'} | ${c.criterion.replace(/\|/g, '\\|')} | ${c.test ? `\`${c.test.replace(/\|/g, '\\|')}\`` : '—'} |`,
+        `| ${c.satisfied ? '✅' : '❌'} | ${plain(c.criterion).replace(/\|/g, '\\|')} | ${c.test ? `\`${plain(c.test).replace(/\|/g, '\\|')}\`` : '—'} |`,
     )
     .join('\n');
   const flags = [
@@ -101,7 +125,7 @@ export function prReviewBody(v: PrVerdict, attempt: number, maxAttempts: number)
   ].filter(Boolean);
   return [
     `## 🤖 Review: ${v.verdict === 'approve' ? '✅ approved' : '🔁 changes requested'}`,
-    v.summary,
+    plain(v.summary),
     rows ? `| | Acceptance criterion | Test |\n|---|---|---|\n${rows}` : '',
     flags.length ? flags.join(' · ') : '',
     v.issues.length ? `### Required changes\n${issueList(v.issues)}` : '',
@@ -132,7 +156,7 @@ export function ciFailureVerdict(ci: CiStatus): PrVerdict {
 export function planReviewComment(v: PlanVerdict): string {
   return [
     `## 🤖 Plan review: ${v.verdict === 'approve' ? '✅ approved, implementation can start' : '🔁 changes requested'}`,
-    v.summary,
+    plain(v.summary),
     v.issues.length ? `### Required changes\n${issueList(v.issues)}` : '',
   ]
     .filter(Boolean)

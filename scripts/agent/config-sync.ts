@@ -90,7 +90,7 @@ export function claudeJobTimeoutProblems(root: string, timeouts: Record<string, 
         s.uses?.startsWith('anthropics/claude-code-action'),
       );
       const role = claude?.env?.['AGENT_MODE'];
-      if (!role) continue;
+      if (!role || !(role in timeouts)) continue;
       if (job['timeout-minutes'] !== timeouts[role]) {
         problems.push(
           `${file} job "${name}" timeout-minutes ${String(job['timeout-minutes'])} must equal workflowTimeoutMinutes.${role} (${String(timeouts[role])})`,

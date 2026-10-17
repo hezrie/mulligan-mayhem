@@ -42,6 +42,25 @@ export function parseNameStatus(text: string): FileChange[] {
     });
 }
 
+/**
+ * Symlinks and submodules in `git diff --raw` output. A symlink is a single path, so it slips past
+ * directory globs (e.g. `scripts/node_modules -> ../vendor` vs `**\/node_modules/**`) and can make
+ * Node or Claude Code load files from anywhere. Agents never need either.
+ */
+export function modeViolations(raw: string): string[] {
+  return raw
+    .split('\n')
+    .filter((line) => line.startsWith(':'))
+    .flatMap((line) => {
+      const [meta = '', ...paths] = line.split('\t');
+      const newMode = meta.slice(1).split(' ')[1] ?? '';
+      const path = paths.at(-1) ?? '';
+      if (newMode === '120000') return [`symlink ${path} (agents may not add symlinks)`];
+      if (newMode === '160000') return [`submodule ${path} (agents may not add submodules)`];
+      return [];
+    });
+}
+
 export function findViolations(
   changes: readonly FileChange[],
   rules: PathRules,
@@ -75,8 +94,11 @@ function main(): void {
   const diff = execFileSync('git', ['diff', '--name-status', '-M', `${baseSha}...HEAD`], {
     encoding: 'utf8',
   });
+  const raw = execFileSync('git', ['diff', '--raw', '-M', `${baseSha}...HEAD`], {
+    encoding: 'utf8',
+  });
   const changes = parseNameStatus(diff);
-  const violations = findViolations(changes, config, physicsChange);
+  const violations = [...findViolations(changes, config, physicsChange), ...modeViolations(raw)];
 
   if (violations.length === 0) {
     report(`agent-guard ✅: ${String(changes.length)} changed paths, none protected.`);

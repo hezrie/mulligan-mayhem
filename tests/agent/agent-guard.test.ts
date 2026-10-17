@@ -1,7 +1,12 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { findViolations, isAgentBranch, parseNameStatus } from '../../scripts/agent/agent-guard.ts';
+import {
+  findViolations,
+  isAgentBranch,
+  modeViolations,
+  parseNameStatus,
+} from '../../scripts/agent/agent-guard.ts';
 import { loadAgentConfig } from '../../scripts/agent/config.ts';
 
 const rules = loadAgentConfig();
@@ -66,5 +71,23 @@ describe('agent-guard', () => {
     });
     expect(r.status).toBe(0);
     expect(r.stdout).toContain('not an agent branch');
+  });
+});
+
+describe('modeViolations (git diff --raw)', () => {
+  it('rejects added or changed symlinks and submodules, whatever their path', () => {
+    const raw = [
+      ':000000 100644 0000000 1111111 A\tsrc/core/sand.ts',
+      ':000000 120000 0000000 2222222 A\tscripts/node_modules',
+      ':100644 120000 3333333 4444444 T\tsrc/.claude',
+      ':000000 160000 0000000 5555555 A\tvendor/lib',
+      ':120000 000000 6666666 0000000 D\told-link',
+    ].join('\n');
+    expect(modeViolations(raw)).toEqual([
+      'symlink scripts/node_modules (agents may not add symlinks)',
+      'symlink src/.claude (agents may not add symlinks)',
+      'submodule vendor/lib (agents may not add submodules)',
+    ]);
+    expect(modeViolations('M\tsrc/a.ts\n')).toEqual([]);
   });
 });

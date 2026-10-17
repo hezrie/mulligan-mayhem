@@ -6,7 +6,7 @@
 import type { AgentConfig } from './config.ts';
 import type { PrInfo, Review } from './github-pr.ts';
 import { AGENT_APPROVED } from './labels.ts';
-import { classifyChange, type FileChange } from './protected.ts';
+import { classifyChange, matchesAny, type FileChange } from './protected.ts';
 import type { CiStatus } from './review.ts';
 import { sizeOf } from './tickets.ts';
 
@@ -63,9 +63,11 @@ export function decideMerge(input: MergeInput): MergeDecision {
     );
   }
   for (const change of input.files) {
-    // Golden replay changes always need a human, even with physics-change.
     const verdict = classifyChange(change, config, false);
     if (!verdict.allowed) reasons.push(verdict.reason);
+    // CODEOWNERS covers tests/replays/, so even a NEW golden replay needs the owner's review.
+    else if (matchesAny(change.path, config.goldenPaths))
+      reasons.push(`golden replay ${change.path} needs the owner's review (CODEOWNERS)`);
   }
   return reasons.length === 0
     ? { action: 'merge', reasons: ['all merge conditions hold'] }

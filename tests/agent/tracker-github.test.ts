@@ -70,26 +70,39 @@ describe('GitHubTracker', () => {
     ]);
   });
 
-  it('maps open PRs from GraphQL, including review decision and closing issues', async () => {
+  it('maps open PRs from GraphQL: author (bot logins normalized), fork flag and reviewers', async () => {
     const { client, calls } = fakeClient({
       graphql: {
         repository: {
           pullRequests: {
+            pageInfo: { hasNextPage: false, endCursor: null },
             nodes: [
               {
                 number: 9,
                 title: 'feat',
                 headRefName: 'agent/1-x',
                 isDraft: false,
+                isCrossRepository: false,
                 createdAt: '2026-10-02T00:00:00Z',
                 reviewDecision: 'CHANGES_REQUESTED',
+                author: { login: 'mm-agent', __typename: 'Bot' },
                 labels: { nodes: [{ name: 'size:S' }] },
                 closingIssuesReferences: { nodes: [{ number: 1 }] },
                 commits: { nodes: [{ commit: { committedDate: '2026-10-02T01:00:00Z' } }] },
-                latestReviews: {
+                latestOpinionatedReviews: {
                   nodes: [
-                    { state: 'COMMENTED', submittedAt: '2026-10-02T05:00:00Z' },
-                    { state: 'CHANGES_REQUESTED', submittedAt: '2026-10-02T02:00:00Z' },
+                    {
+                      state: 'CHANGES_REQUESTED',
+                      submittedAt: '2026-10-02T02:00:00Z',
+                      authorAssociation: 'NONE',
+                      author: { login: 'github-actions', __typename: 'Bot' },
+                    },
+                    {
+                      state: 'COMMENTED',
+                      submittedAt: '2026-10-02T05:00:00Z',
+                      authorAssociation: 'OWNER',
+                      author: { login: 'hezrie', __typename: 'User' },
+                    },
                   ],
                 },
               },
@@ -109,13 +122,79 @@ describe('GitHubTracker', () => {
         labels: ['size:S'],
         reviewDecision: 'CHANGES_REQUESTED',
         closesIssues: [1],
+        author: 'mm-agent[bot]',
+        isCrossRepository: false,
         lastCommitAt: '2026-10-02T01:00:00Z',
-        lastChangesRequestedAt: '2026-10-02T02:00:00Z',
+        latestReviews: [
+          {
+            author: 'github-actions[bot]',
+            authorAssociation: 'NONE',
+            state: 'CHANGES_REQUESTED',
+            submittedAt: '2026-10-02T02:00:00Z',
+          },
+          {
+            author: 'hezrie',
+            authorAssociation: 'OWNER',
+            state: 'COMMENTED',
+            submittedAt: '2026-10-02T05:00:00Z',
+          },
+        ],
       },
     ]);
     expect(calls[0]?.body).toMatchObject({
-      variables: { owner: 'hezrie', name: 'mulligan-mayhem' },
+      variables: { owner: 'hezrie', name: 'mulligan-mayhem', after: null },
     });
+  });
+
+  it('pages through every open PR (the newest are the agent’s current ones)', async () => {
+    const node = (number: number) => ({
+      number,
+      title: 't',
+      headRefName: `agent/${String(number)}-x`,
+      isDraft: false,
+      isCrossRepository: false,
+      createdAt: '2026-10-02T00:00:00Z',
+      reviewDecision: null,
+      author: { login: 'mm-agent', __typename: 'Bot' },
+      labels: { nodes: [] },
+      closingIssuesReferences: { nodes: [] },
+      commits: { nodes: [] },
+      latestOpinionatedReviews: { nodes: [] },
+    });
+    const pages = [
+      { pageInfo: { hasNextPage: true, endCursor: 'c1' }, nodes: [node(1), node(2)] },
+      { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [node(3)] },
+    ];
+    const cursors: unknown[] = [];
+    const client: GhClient = {
+      rest: () => Promise.reject(new Error('unused')),
+      restAll: () => Promise.reject(new Error('unused')),
+      graphql: <T>(_query: string, variables: Record<string, unknown>): Promise<T> => {
+        cursors.push(variables['after']);
+        return Promise.resolve({ repository: { pullRequests: pages[cursors.length - 1] } } as T);
+      },
+    };
+    const prs = await new GitHubTracker(client, R).listOpenPullRequests();
+    expect(prs.map((p) => p.number)).toEqual([1, 2, 3]);
+    expect(cursors).toEqual([null, 'c1']);
+  });
+
+  it('treats a "Blocked by" reference that does not resolve as open, instead of failing', async () => {
+    const { client } = fakeClient(
+      { [`GET repos/${R}/issues/7`]: issue(7, { state: 'closed' }) },
+      {
+        [`GET repos/${R}/issues/9999`]: new GhApiError('Not Found', 404),
+        [`GET repos/${R}/issues/8`]: new GhApiError('Gone', 410),
+      },
+    );
+    const states = await new GitHubTracker(client, R).issueStates([7, 8, 9999]);
+    expect([...states]).toEqual([
+      [7, 'closed'],
+      [8, 'open'],
+      [9999, 'open'],
+    ]);
+    const broken = fakeClient({}, { [`GET repos/${R}/issues/5`]: new GhApiError('Boom', 502) });
+    await expect(new GitHubTracker(broken.client, R).issueStates([5])).rejects.toThrow('Boom');
   });
 
   it('writes labels, comments and tickets through the REST API', async () => {

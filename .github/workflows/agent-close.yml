@@ -40,5 +40,6 @@ jobs:
       - name: Summarize and clean up
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
           ISSUE: ${{ github.event.issue.number }}
         run: npx tsx scripts/agent/cli.ts close --issue "$ISSUE"
