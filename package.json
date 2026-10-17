@@ -22,7 +22,7 @@
     "test:e2e": "npm run build && npm run build:e2e && playwright test",
     "check:integrity": "tsx scripts/check-test-integrity.ts",
     "replay:record": "tsx scripts/record-replay.ts",
-    "check": "npm run typecheck && npm run lint && npm run test:coverage && npm run check:integrity && npm run build && npm run test:e2e"
+    "check": "bash .claude/hooks/stamp-check.sh start && npm run typecheck && npm run lint && npm run test:coverage && npm run check:integrity && npm run build && npm run test:e2e && bash .claude/hooks/stamp-check.sh pass"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

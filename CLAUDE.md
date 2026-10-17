@@ -74,7 +74,7 @@ physics and IEEE-exact math: [docs/decisions/0001-custom-deterministic-physics.m
 ## Protected paths (hooks block edits; CI `agent-guard` fails the PR; CODEOWNERS = @hezrie)
 
 The canonical list is `protectedPaths` in `agent.config.json`. In short: `.github/`, `.claude/`,
-`.agent/prompts/`, `.agent/LESSONS.md`, `CLAUDE.md`, `PLAN.md`, `agent.config.json`,
+`.agent/prompts/`, `.agent/LESSONS.md`, `.gitignore`, `CLAUDE.md`, `PLAN.md`, `agent.config.json`,
 `scripts/agent/`, `scripts/setup/`, `scripts/check-test-integrity.ts`, `package.json`,
 `package-lock.json`, `.nvmrc`, `tsconfig*.json`, `vite.config.ts`, `vitest.config.ts`,
 `playwright.config.ts`, `eslint.config.js`, `.dependency-cruiser.cjs`, Prettier config,

@@ -10,7 +10,7 @@
 | 1     | Scaffold & tooling     | ✅ Done                           |
 | 2     | Rulebook               | ✅ Done                           |
 | 3     | Walking skeleton       | ✅ Done                           |
-| 4     | Guardrails             | ⏳                                |
+| 4     | Guardrails             | ✅ Done                           |
 | 5     | CI/CD + repo + Pages   | ⏳                                |
 | 6     | Ticket system          | ⏳                                |
 | 7     | Agent workflows        | ⏳ (needs secrets from you first) |
@@ -224,6 +224,23 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 - `scripts/check-test-integrity.ts` (incl. config sync), `CODEOWNERS` (`@hezrie` on every protected path), and the PR template (criterion → test table, `Closes #N`, screenshots, follow-ups).
 - **Exit:** the hook test matrix is green; check green.
 
+- **As built:**
+  - `agent.config.json` was created now rather than in Phase 7, because the hooks need `protectedPaths`. A zod loader lives in `scripts/agent/config.ts`.
+  - **Hooks** (`.claude/hooks/*.sh`, `jq`, bash 3.2 compatible):
+    - `protect-paths`: resolves `..` and symlinks, blocks writes outside the project (temp dirs are allowed), and enforces the golden-replay rule that new files are OK but edits aren't
+    - `guard-bash`: works per simple command, so it splits on `; && || | $( )` and backticks
+    - `session-start`: the canary, which also records the starting fingerprint
+    - `require-check`: the Stop hook
+    - `stamp-check`: called by `npm run check`
+  - **Fail-closed by construction.** Every hook runs inside `run_guarded`, which maps _any_ non-zero exit to 2, with `set -E` and an ERR trap. The test matrix proved why this matters: a bash-3.2 parser bug made a hook exit 1, which Claude Code treats as _allow_.
+  - **Test matrix.** `tests/guardrails/hooks.test.ts` has 77 cases. It includes a check that the bash/jq matcher and the TypeScript matcher used by CI agree on every path. `tests/guardrails/protected-paths.test.ts` keeps CODEOWNERS and CLAUDE.md in sync with the config.
+  - `.github/CODEOWNERS` (@hezrie on every protected and golden path), the PR template, and `scripts/agent/escalate.ts`.
+- **Deviations (all stricter than the brief):**
+  - **All** `git push` is blocked for agents, not just force/main, because pushes are a workflow step.
+  - `npm install/add/update` is blocked (package.json is protected), as are `gh api|secret|variable|workflow|auth|repo`, writes outside the project, and `.env`/`secrets/` in shell commands.
+  - The Stop hook compares a **content fingerprint** of all non-ignored files with the fingerprint `npm run check` passed on, instead of "time since last Edit". That catches edits made through Bash or scripts, and commits don't fool it.
+  - A command that is exactly `npx tsx scripts/agent/escalate.ts "<plain text>"` is always allowed, so escalating can never be blocked by a reason that mentions "cp" or ">".
+
 ### Phase 5: CI/CD
 
 - `ci.yml` (PRs + `main`): the steps of `npm run check` in order, plus `agent-guard`, an npm + Playwright browser cache, and Playwright screenshots/report as artifacts.
@@ -324,3 +341,4 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 - 2026-10-17: Plan approved. Phase 1 complete: tooling wired, `npm run check` green (24 unit + 5 e2e tests).
 - 2026-10-17: Phase 2 complete: rulebook + 6 docs + ADR 0001 + lessons file; doc tests added.
 - 2026-10-17: Phase 3 complete: playable par-3 walking skeleton, 193 unit/invariant/replay tests, 19 e2e tests; Node and Chromium hashes match.
+- 2026-10-17: Phase 4 complete: hooks + settings + config + CODEOWNERS + PR template; 320 unit tests (77 hook cases).

@@ -1,0 +1,31 @@
+# Code owners. Protected paths need @hezrie's review, even when someone bypasses the agent loop.
+# GENERATED FROM agent.config.json (protectedPaths + goldenPaths) and kept in sync by
+# tests/guardrails/protected-paths.test.ts. Edit agent.config.json first, then this file.
+
+/.github/                                @hezrie
+/.claude/                                @hezrie
+/.agent/prompts/                         @hezrie
+/.agent/LESSONS.md                       @hezrie
+/.gitignore                              @hezrie
+/CLAUDE.md                               @hezrie
+/PLAN.md                                 @hezrie
+/agent.config.json                       @hezrie
+/scripts/agent/                          @hezrie
+/scripts/setup/                          @hezrie
+/scripts/check-test-integrity.ts         @hezrie
+/package.json                            @hezrie
+/package-lock.json                       @hezrie
+/.nvmrc                                  @hezrie
+/tsconfig*.json                          @hezrie
+/vite.config.ts                          @hezrie
+/vitest.config.ts                        @hezrie
+/playwright.config.ts                    @hezrie
+/eslint.config.js                        @hezrie
+/.dependency-cruiser.cjs                 @hezrie
+/.prettierrc.json                        @hezrie
+/.prettierignore                         @hezrie
+/e2e/fixtures.ts                         @hezrie
+/docs/DEFINITION_OF_READY.md             @hezrie
+/docs/DEFINITION_OF_DONE.md              @hezrie
+/docs/decisions/                         @hezrie
+/tests/replays/                          @hezrie
