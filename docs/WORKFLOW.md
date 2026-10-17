@@ -37,13 +37,21 @@ you need to do, and how to stop everything from your phone.
 | Close       | `agent-close.yml`            | issue closed                                       | no   |
 | Digest      | `agent-digest.yml`           | weekly (Monday) or manual                          | yes  |
 
-**Picker order.** The picker is deterministic, with no LLM:
+**Picker order.** The picker (`scripts/agent/pick-next.ts`) is deterministic, with no LLM:
 
-1. finish PRs that have "changes requested"
-2. M tickets with `plan:approved` that aren't implemented yet
-3. `status:ready` by priority (P0 first), then oldest first
+1. **Finish before starting.** An agent PR with "changes requested" gets a fix pass. This happens even at the WIP limit, because it _is_ the work in progress.
+2. **WIP limit** (default 1). Tickets labelled `status:in-progress` or `status:in-review` count toward it; escalated (`needs-human`) tickets don't.
+3. **Daily cap** (default 6). It counts tickets started per UTC day, read from the run log. Fix passes don't count.
+4. **Order of work:**
+   - M tickets with `plan:approved` first
+   - then `status:ready` by priority (P0 first)
+   - then oldest first
+5. **Skips.** The picker skips tickets that are:
+   - blocked by an open issue
+   - missing a size
+   - waiting on a plan review
 
-It skips anything "Blocked by" an open issue, and respects the WIP limit (1) and the daily cap (6).
+A manual run with an issue number ignores the order, the WIP limit and the cap, but still refuses blocked or not-ready tickets.
 
 ## Labels
 
@@ -112,6 +120,13 @@ cancel it in the Actions tab.
   number), or `gh workflow run agent-worker.yml -f issue=12`.
 - Re-run the reviewer on a PR: Actions → **Agent Review** → Run workflow with the PR number.
 - Generate a digest now: Actions → **Agent Digest** → Run workflow.
+
+## One-time setup scripts
+
+Both are idempotent and safe to re-run:
+
+- `GITHUB_REPOSITORY=hezrie/mulligan-mayhem npm run setup:labels` creates or updates every label in `scripts/agent/labels.ts`.
+- `GITHUB_REPOSITORY=hezrie/mulligan-mayhem npm run setup:run-log` creates and pins the run log issue.
 
 ## Ideas from family
 

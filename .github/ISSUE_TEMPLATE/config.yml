@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 How the agent loop works
+    url: https://github.com/hezrie/mulligan-mayhem/blob/main/docs/WORKFLOW.md
+    about: Labels, autonomy levels and the kill switch, explained.

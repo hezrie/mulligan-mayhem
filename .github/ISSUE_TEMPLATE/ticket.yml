@@ -1,0 +1,77 @@
+name: 🎯 Ticket (Definition of Ready)
+description: A buildable piece of work with testable acceptance criteria. For raw ideas, use "Idea or bug" instead.
+title: '[Ticket] '
+labels: ['status:needs-refinement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Fill every field. A ticket enters the worker queue only when it meets the
+        [Definition of Ready](https://github.com/hezrie/mulligan-mayhem/blob/main/docs/DEFINITION_OF_READY.md).
+        The refiner checks it and adds the size, priority and type labels.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / Goal
+      description: One or two sentences, from the player's point of view where possible.
+      placeholder: Sand traps should punish overhit shots by slowing the ball sharply.
+    validations:
+      required: true
+  - type: textarea
+    id: criteria
+    attributes:
+      label: Acceptance Criteria
+      description: A checklist. Each item must be observable and map to a test someone could write.
+      placeholder: |
+        - [ ] A ball on sand decelerates at 3× the fairway rate (unit test on stepBall)
+        - [ ] Sand zones render in a sand colour (e2e screenshot)
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of Scope
+      description: What this ticket must NOT do, to prevent scope creep.
+      placeholder: |
+        - Rough terrain (separate ticket)
+        - Sound effects
+    validations:
+      required: true
+  - type: dropdown
+    id: size
+    attributes:
+      label: Size
+      description: S ≤ ~150 changed lines in one area; M ≤ ~400 lines in at most two areas. Anything larger must be split.
+      options: ['S', 'M']
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options: ['P0', 'P1', 'P2', 'P3']
+      default: 2
+    validations:
+      required: true
+  - type: dropdown
+    id: type
+    attributes:
+      label: Type
+      options: ['feature', 'bug', 'chore', 'refactor', 'test']
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: One "Blocked by #N" per line, or "None".
+      value: None
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes / Visual reference
+      description: Sketches, screenshots, links, open questions.
+    validations:
+      required: false
