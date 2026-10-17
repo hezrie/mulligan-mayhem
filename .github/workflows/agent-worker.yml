@@ -82,9 +82,11 @@ jobs:
           SLUG: ${{ steps.app.outputs.app-slug }}
         run: |
           id=$(gh api "users/${SLUG}%5Bbot%5D" --jq .id)
-          echo "id=${id}" >> "$GITHUB_OUTPUT"
-          echo "name=${SLUG}[bot]" >> "$GITHUB_OUTPUT"
-          echo "email=${id}+${SLUG}[bot]@users.noreply.github.com" >> "$GITHUB_OUTPUT"
+          {
+            echo "id=${id}"
+            echo "name=${SLUG}[bot]"
+            echo "email=${id}+${SLUG}[bot]@users.noreply.github.com"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Start (comment, labels, branch, ticket context)
         if: steps.pick.outputs.issue != ''

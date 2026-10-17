@@ -36,12 +36,28 @@ jobs:
         run: |
           fail=0
           check() { if [ "$2" = "ok" ]; then echo "✅ $1" | tee -a "$GITHUB_STEP_SUMMARY"; else echo "❌ $1: $2" | tee -a "$GITHUB_STEP_SUMMARY"; fail=1; fi; }
-          [ "$SLUG" = "$EXPECTED_SLUG" ] && check "App is $SLUG" ok || check "App slug" "got '$SLUG', vars.AGENT_APP_SLUG is '$EXPECTED_SLUG'"
+          if [ "$SLUG" = "$EXPECTED_SLUG" ]; then
+            check "App is $SLUG" ok
+          else
+            check "App slug" "got '$SLUG', vars.AGENT_APP_SLUG is '$EXPECTED_SLUG'"
+          fi
           perms=$(gh api "repos/$REPO" --jq '.permissions | "push=\(.push) admin=\(.admin)"')
-          [ "$perms" = "push=true admin=false" ] && check "App can write, is not admin ($perms)" ok || check "App access" "$perms (need push=true admin=false)"
+          if [ "$perms" = "push=true admin=false" ]; then
+            check "App can write, is not admin ($perms)" ok
+          else
+            check "App access" "$perms (need push=true admin=false)"
+          fi
           log=$(gh api "repos/$REPO/issues?state=open&labels=meta:run-log" --jq 'length')
-          [ "$log" -ge 1 ] && check "Run log issue exists" ok || check "Run log" "missing (npm run setup:run-log)"
-          [ "$HAS_CLAUDE_TOKEN" = "true" ] && check "CLAUDE_CODE_OAUTH_TOKEN is set" ok || check "Claude credential" "CLAUDE_CODE_OAUTH_TOKEN is empty"
+          if [ "$log" -ge 1 ]; then
+            check "Run log issue exists" ok
+          else
+            check "Run log" "missing (npm run setup:run-log)"
+          fi
+          if [ "$HAS_CLAUDE_TOKEN" = "true" ]; then
+            check "CLAUDE_CODE_OAUTH_TOKEN is set" ok
+          else
+            check "Claude credential" "CLAUDE_CODE_OAUTH_TOKEN is empty"
+          fi
           exit $fail
 
   claude:
