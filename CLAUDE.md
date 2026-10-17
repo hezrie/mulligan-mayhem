@@ -78,7 +78,8 @@ The canonical list is `protectedPaths` in `agent.config.json`. In short: `.githu
 `scripts/agent/`, `scripts/setup/`, `scripts/check-test-integrity.ts`, `package.json`,
 `package-lock.json`, `.nvmrc`, `tsconfig*.json`, `vite.config.ts`, `vitest.config.ts`,
 `playwright.config.ts`, `eslint.config.js`, `.dependency-cruiser.cjs`, Prettier config,
-`e2e/fixtures.ts`, `docs/DEFINITION_OF_*.md`, `docs/decisions/`.
+`e2e/fixtures.ts`, `docs/DEFINITION_OF_*.md`, `docs/decisions/`, and tool config that Claude Code
+or git would execute: `.mcp.json`, `.claude.json`, `CLAUDE.local.md`, `.husky/`, `.gitmodules`, `.ripgreprc`.
 
 **Golden replays** (`tests/replays/`): you may **add** new replay files. Changing or deleting an
 existing one requires the ticket label `physics-change` (the worker then runs with

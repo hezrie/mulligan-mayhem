@@ -1,0 +1,124 @@
+# Agent Refine: turns raw ideas (status:needs-refinement) into Definition-of-Ready tickets, splits L
+# work, or asks the owner 1–3 questions. Public repo: a deterministic trust gate runs first, the
+# issue text is passed as untrusted data, and the LLM has read-only tools and returns structured
+# output only. PROTECTED.
+name: Agent Refine
+
+on:
+  issues:
+    types: [opened, labeled]
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Issue number to refine
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-refine-${{ github.event.issue.number || inputs.issue }}
+  cancel-in-progress: true
+
+jobs:
+  refine:
+    if: >-
+      vars.AGENT_PAUSED != 'true' && (
+        github.event_name == 'workflow_dispatch' ||
+        (github.event.action == 'labeled' && github.event.label.name == 'status:needs-refinement') ||
+        (github.event.action == 'opened' && contains(github.event.issue.labels.*.name, 'status:needs-refinement')))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - name: Record start time
+        id: t
+        run: echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Mint the bot App token
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+
+      - name: Trust gate
+        id: gate
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          ISSUE: ${{ github.event.issue.number || inputs.issue }}
+          SENDER: ${{ github.actor }}
+        run: |
+          echo "issue=${ISSUE}" >> "$GITHUB_OUTPUT"
+          npx tsx scripts/agent/cli.ts refine-gate --issue "$ISSUE" --sender "$SENDER"
+          bash .claude/hooks/stamp-check.sh session
+
+      - name: Load schema, config and prompt
+        if: steps.gate.outputs.proceed == 'true'
+        id: prep
+        env:
+          ISSUE: ${{ steps.gate.outputs.issue }}
+        run: |
+          npx tsx scripts/agent/cli.ts schema --name refinement
+          npx tsx scripts/agent/cli.ts config --role refiner
+          npx tsx scripts/agent/cli.ts prompt --name refiner --issue "$ISSUE"
+
+      - name: Run Claude (refiner)
+        if: steps.gate.outputs.proceed == 'true'
+        id: claude
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        env:
+          AGENT_MODE: refiner
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          allowed_bots: ${{ steps.app.outputs.app-slug }}
+          allowed_non_write_users: ${{ steps.gate.outputs.non_write_actor }}
+          settings: '{"env":{"AGENT_MODE":"refiner"}}'
+          prompt: ${{ steps.prep.outputs.text }}
+          claude_args: |
+            --model ${{ steps.prep.outputs.model }}
+            --max-turns ${{ steps.prep.outputs.max_turns }}
+            --json-schema '${{ steps.prep.outputs.json }}'
+            --allowedTools "Read,Glob,Grep,LS"
+            --disallowedTools "Edit,Write,MultiEdit,NotebookEdit,Bash,WebFetch,WebSearch"
+
+      - name: Verify the guardrails were active
+        if: always() && steps.gate.outputs.proceed == 'true'
+        id: canary
+        run: |
+          if grep -q '^refiner ' .agent/.state/hooks-active 2>/dev/null; then
+            echo "loaded=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "loaded=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Guardrail hooks did not load for the refiner."
+          fi
+
+      - name: Apply the refinement
+        if: always() && steps.gate.outputs.proceed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          ISSUE: ${{ steps.gate.outputs.issue }}
+          REFINEMENT_JSON: ${{ steps.canary.outputs.loaded == 'true' && steps.claude.outputs.structured_output || '' }}
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+          STARTED_AT: ${{ steps.t.outputs.started_at }}
+        run: npx tsx scripts/agent/cli.ts refine-finish --issue "$ISSUE"
+
+      - name: Fail the run if the guardrails were missing
+        if: always() && steps.canary.outputs.loaded == 'false'
+        run: exit 1

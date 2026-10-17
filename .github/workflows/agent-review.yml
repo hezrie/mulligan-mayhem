@@ -1,0 +1,300 @@
+# Agent Review: an independent reviewer with fresh context. PR reviews run when CI finishes on an
+# agent/* PR; plan reviews run when a ticket gets plan:proposed. The LLM job is read-only; the review
+# is submitted by a separate job as github-actions[bot] (so author ≠ reviewer), and an approval
+# hands off to the merge gate. PROTECTED.
+name: Agent Review
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: PR number to review
+        required: false
+        default: ''
+      issue:
+        description: Ticket number whose plan to review
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-review-${{ github.event.workflow_run.head_branch || github.event.issue.number || inputs.pr || inputs.issue }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: >-
+      vars.AGENT_PAUSED != 'true' && (
+        (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' &&
+         startsWith(github.event.workflow_run.head_branch, 'agent/')) ||
+        (github.event_name == 'workflow_dispatch' && inputs.pr != ''))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      checks: read
+    outputs:
+      skip: ${{ steps.ctx.outputs.skip }}
+      pr: ${{ steps.pr.outputs.number }}
+      issue: ${{ steps.ctx.outputs.issue }}
+      ci_green: ${{ steps.ctx.outputs.ci_green }}
+      ci_failing: ${{ steps.ctx.outputs.ci_failing }}
+      ci_pending: ${{ steps.ctx.outputs.ci_pending }}
+      verdict: ${{ steps.claude.outputs.structured_output }}
+      execution_ok: ${{ steps.claude.outcome }}
+      hooks_loaded: ${{ steps.canary.outputs.loaded }}
+      started_at: ${{ steps.t.outputs.started_at }}
+    steps:
+      - name: Record start time
+        id: t
+        run: echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve the PR
+        id: pr
+        env:
+          FROM_RUN: ${{ github.event.workflow_run.pull_requests[0].number }}
+          FROM_INPUT: ${{ inputs.pr }}
+        run: echo "number=${FROM_RUN:-$FROM_INPUT}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Mint the bot App token
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+
+      - name: Collect review context
+        id: ctx
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PR: ${{ steps.pr.outputs.number }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: npx tsx scripts/agent/cli.ts review-context --pr "$PR" ${SHA:+--sha "$SHA"}
+
+      - name: Check out the PR, keeping main's rules
+        if: steps.ctx.outputs.skip == 'false' && steps.ctx.outputs.ci_green == 'true'
+        env:
+          PR: ${{ steps.pr.outputs.number }}
+          SHA: ${{ steps.ctx.outputs.head_sha }}
+        run: |
+          git fetch --no-tags origin "+refs/pull/${PR}/head:refs/remotes/pr/${PR}"
+          git switch --detach "$SHA"
+          rm -rf .claude .agent/prompts .mcp.json .claude.json CLAUDE.local.md
+          git checkout origin/main -- .claude CLAUDE.md .agent/prompts .agent/LESSONS.md docs/DEFINITION_OF_DONE.md
+          bash .claude/hooks/stamp-check.sh session
+
+      - name: Load schema, config and prompt
+        if: steps.ctx.outputs.skip == 'false' && steps.ctx.outputs.ci_green == 'true'
+        id: prep
+        env:
+          PR: ${{ steps.pr.outputs.number }}
+          ISSUE: ${{ steps.ctx.outputs.issue }}
+        run: |
+          npx tsx scripts/agent/cli.ts schema --name pr-verdict
+          npx tsx scripts/agent/cli.ts config --role reviewer
+          npx tsx scripts/agent/cli.ts prompt --name reviewer-pr --issue "$ISSUE" --pr "$PR"
+
+      - name: Run Claude (reviewer)
+        if: steps.ctx.outputs.skip == 'false' && steps.ctx.outputs.ci_green == 'true'
+        id: claude
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        env:
+          AGENT_MODE: reviewer
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          allowed_bots: ${{ steps.app.outputs.app-slug }}
+          settings: '{"env":{"AGENT_MODE":"reviewer"}}'
+          prompt: ${{ steps.prep.outputs.text }}
+          claude_args: |
+            --model ${{ steps.prep.outputs.model }}
+            --max-turns ${{ steps.prep.outputs.max_turns }}
+            --json-schema '${{ steps.prep.outputs.json }}'
+            --allowedTools "Read,Glob,Grep,LS,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(ls:*),Bash(cat:*),Bash(wc:*)"
+            --disallowedTools "Edit,Write,MultiEdit,NotebookEdit,Bash(gh:*),Bash(git push:*),Bash(curl:*),Bash(wget:*),WebFetch,WebSearch"
+
+      - name: Verify the guardrails were active
+        if: always() && steps.claude.outcome != 'skipped' && steps.claude.outcome != ''
+        id: canary
+        run: |
+          if grep -q '^reviewer ' .agent/.state/hooks-active 2>/dev/null; then
+            echo "loaded=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "loaded=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Guardrail hooks did not load for the reviewer."
+            exit 1
+          fi
+
+  submit:
+    needs: review
+    if: always() && needs.review.result != 'skipped' && needs.review.outputs.skip == 'false'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      approved: ${{ steps.finish.outputs.approved }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Mint the bot App token
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+
+      - name: Submit the review
+        id: finish
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          REVIEW_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ needs.review.outputs.pr }}
+          ISSUE: ${{ needs.review.outputs.issue }}
+          CI_GREEN: ${{ needs.review.outputs.ci_green }}
+          CI_FAILING: ${{ needs.review.outputs.ci_failing }}
+          CI_PENDING: ${{ needs.review.outputs.ci_pending }}
+          # An unverified run (hooks missing) never counts: its verdict is dropped.
+          VERDICT_JSON: ${{ needs.review.outputs.hooks_loaded == 'true' && needs.review.outputs.verdict || '' }}
+          STARTED_AT: ${{ needs.review.outputs.started_at }}
+        run: npx tsx scripts/agent/cli.ts review-finish --pr "$PR" --issue "$ISSUE"
+
+  merge:
+    needs: [review, submit]
+    if: needs.submit.outputs.approved == 'true'
+    uses: ./.github/workflows/agent-merge.yml
+    with:
+      pr: ${{ needs.review.outputs.pr }}
+    secrets: inherit
+
+  plan-review:
+    if: >-
+      vars.AGENT_PAUSED != 'true' && (
+        (github.event_name == 'issues' && github.event.label.name == 'plan:proposed') ||
+        (github.event_name == 'workflow_dispatch' && inputs.issue != ''))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - name: Record start time
+        id: t
+        run: echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Mint the bot App token
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+
+      - name: Collect the plan
+        id: ctx
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          ISSUE: ${{ github.event.issue.number || inputs.issue }}
+        run: |
+          echo "issue=${ISSUE}" >> "$GITHUB_OUTPUT"
+          npx tsx scripts/agent/cli.ts plan-review-context --issue "$ISSUE"
+          bash .claude/hooks/stamp-check.sh session
+
+      - name: Load schema, config and prompt
+        if: steps.ctx.outputs.skip == 'false'
+        id: prep
+        env:
+          ISSUE: ${{ steps.ctx.outputs.issue }}
+        run: |
+          npx tsx scripts/agent/cli.ts schema --name plan-verdict
+          npx tsx scripts/agent/cli.ts config --role reviewer
+          npx tsx scripts/agent/cli.ts prompt --name reviewer-plan --issue "$ISSUE"
+
+      - name: Run Claude (plan reviewer)
+        if: steps.ctx.outputs.skip == 'false'
+        id: claude
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        env:
+          AGENT_MODE: reviewer
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          allowed_bots: ${{ steps.app.outputs.app-slug }}
+          settings: '{"env":{"AGENT_MODE":"reviewer"}}'
+          prompt: ${{ steps.prep.outputs.text }}
+          claude_args: |
+            --model ${{ steps.prep.outputs.model }}
+            --max-turns ${{ steps.prep.outputs.max_turns }}
+            --json-schema '${{ steps.prep.outputs.json }}'
+            --allowedTools "Read,Glob,Grep,LS,Bash(git log:*),Bash(ls:*),Bash(cat:*)"
+            --disallowedTools "Edit,Write,MultiEdit,NotebookEdit,Bash(gh:*),Bash(git push:*),Bash(curl:*),Bash(wget:*),WebFetch,WebSearch"
+
+      - name: Verify the guardrails were active
+        if: always() && steps.ctx.outputs.skip == 'false'
+        id: canary
+        run: |
+          if grep -q '^reviewer ' .agent/.state/hooks-active 2>/dev/null; then
+            echo "loaded=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "loaded=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Guardrail hooks did not load for the plan reviewer."
+          fi
+
+      - name: Apply the plan verdict
+        if: always() && steps.ctx.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          ISSUE: ${{ steps.ctx.outputs.issue }}
+          VERDICT_JSON: ${{ steps.canary.outputs.loaded == 'true' && steps.claude.outputs.structured_output || '' }}
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+          STARTED_AT: ${{ steps.t.outputs.started_at }}
+        run: npx tsx scripts/agent/cli.ts plan-review-finish --issue "$ISSUE"
+
+      - name: Fail the run if the guardrails were missing
+        if: always() && steps.canary.outputs.loaded == 'false'
+        run: exit 1

@@ -63,6 +63,14 @@ function fixCandidate(s: Snapshot): { ticket: Ticket; pr: PullRequest } | null {
   for (const pr of [...s.pullRequests].sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
     if (!pr.headRef.startsWith('agent/') || pr.isDraft || pr.reviewDecision !== 'CHANGES_REQUESTED')
       continue;
+    // Fixes already pushed but not yet re-reviewed: don't start a second fix pass on old feedback.
+    if (
+      pr.lastCommitAt &&
+      pr.lastChangesRequestedAt &&
+      pr.lastCommitAt > pr.lastChangesRequestedAt
+    ) {
+      continue;
+    }
     const n = ticketOfPr(pr);
     const ticket = n === null ? undefined : byNumber.get(n);
     if (ticket && statusOf(ticket.labels) !== STATUS.needsHuman) return { ticket, pr };

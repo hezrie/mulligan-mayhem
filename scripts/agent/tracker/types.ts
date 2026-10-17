@@ -27,6 +27,9 @@ export interface PullRequest {
   readonly reviewDecision: ReviewDecision;
   /** Issues this PR closes ("Closes #N"). */
   readonly closesIssues: readonly number[];
+  /** When the head commit was made, and when the latest "changes requested" review was submitted. */
+  readonly lastCommitAt: string | null;
+  readonly lastChangesRequestedAt: string | null;
 }
 
 export interface IssueComment {
@@ -42,6 +45,13 @@ export interface NewTicket {
   readonly labels: readonly string[];
 }
 
+export interface TicketPatch {
+  readonly title?: string;
+  readonly body?: string;
+  readonly state?: 'open' | 'closed';
+  readonly stateReason?: 'completed' | 'not_planned';
+}
+
 export interface Tracker {
   listOpenTickets(): Promise<Ticket[]>;
   getTicket(number: number): Promise<Ticket>;
@@ -55,4 +65,7 @@ export interface Tracker {
   /** Removing a label that isn't there is a no-op. */
   removeLabel(number: number, label: string): Promise<void>;
   comment(number: number, body: string): Promise<void>;
+  updateTicket(number: number, patch: TicketPatch): Promise<void>;
+  /** All tickets (open and closed) carrying a label, newest first. */
+  listTicketsByLabel(label: string): Promise<Ticket[]>;
 }

@@ -44,6 +44,7 @@ export const RunLogEntrySchema = z.strictObject({
   issue: z.int().nullable(),
   pr: z.int().nullable(),
   mode: z.enum(MODES).nullable(),
+  size: z.enum(['S', 'M']).nullable(),
   outcome: z.enum(OUTCOMES),
   attempt: z.int().min(0).nullable(),
   turns: z.int().min(0).nullable(),

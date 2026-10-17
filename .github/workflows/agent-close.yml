@@ -1,0 +1,44 @@
+# Agent Close: when a ticket closes, post a summary (PR link, deploy URL), strip status labels, log
+# the run, and open an "Architecture & drift review" every N agent merges. No LLM. PROTECTED.
+name: Agent Close
+
+on:
+  issues:
+    types: [closed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-close-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  close:
+    if: vars.AGENT_PAUSED != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Mint the bot App token
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+
+      - name: Summarize and clean up
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: npx tsx scripts/agent/cli.ts close --issue "$ISSUE"

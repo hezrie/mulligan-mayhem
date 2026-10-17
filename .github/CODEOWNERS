@@ -6,6 +6,12 @@
 /.claude/                                @hezrie
 /.agent/prompts/                         @hezrie
 /.agent/LESSONS.md                       @hezrie
+/.mcp.json                               @hezrie
+/.claude.json                            @hezrie
+/CLAUDE.local.md                         @hezrie
+/.husky/                                 @hezrie
+/.gitmodules                             @hezrie
+/.ripgreprc                              @hezrie
 /.gitignore                              @hezrie
 /CLAUDE.md                               @hezrie
 /PLAN.md                                 @hezrie

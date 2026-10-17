@@ -12,6 +12,7 @@ const entry: RunLogEntry = {
   issue: 12,
   pr: 30,
   mode: 'implement',
+  size: 'S',
   outcome: 'pr-opened',
   attempt: 1,
   turns: 42,

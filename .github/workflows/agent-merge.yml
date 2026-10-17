@@ -1,0 +1,50 @@
+# Agent Merge: the merge gate. Squash-merges only when CI is green, the reviewer approved the
+# current head, the size is allowed at the current autonomyLevel, and no protected path is in the
+# diff; otherwise it comments "Ready for human merge". No LLM. Uses the bot App token so the merge
+# triggers CI/deploy and the closer. PROTECTED.
+name: Agent Merge
+
+on:
+  workflow_call:
+    inputs:
+      pr:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: PR number to evaluate for merge
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  merge:
+    if: vars.AGENT_PAUSED != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Mint the bot App token
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+
+      - name: Evaluate the merge gate
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PR: ${{ inputs.pr }}
+        run: npx tsx scripts/agent/cli.ts merge --pr "$PR"

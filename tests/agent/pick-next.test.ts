@@ -37,6 +37,8 @@ function pr(number: number, headRef: string, extra: Partial<PullRequest> = {}): 
     labels: [],
     reviewDecision: 'REVIEW_REQUIRED',
     closesIssues: [],
+    lastCommitAt: '2026-10-10T00:00:00Z',
+    lastChangesRequestedAt: '2026-10-11T00:00:00Z',
     ...extra,
   };
 }
@@ -56,6 +58,7 @@ function started(
     issue: n,
     pr: null,
     mode,
+    size: 'S',
     outcome: 'pr-opened',
     attempt: 1,
     turns: 10,
@@ -239,6 +242,23 @@ describe('pickNext finish-before-start', () => {
       issue: 3,
       mode: 'fix',
       pr: 33,
+    });
+  });
+
+  it('does not start a second fix pass while pushed fixes await re-review', () => {
+    const s = snap({
+      tickets: [ticket(4, ['status:in-review', 'size:S']), ticket(5, READY_S)],
+      pullRequests: [
+        pr(20, 'agent/4-sand', {
+          reviewDecision: 'CHANGES_REQUESTED',
+          lastChangesRequestedAt: '2026-10-11T00:00:00Z',
+          lastCommitAt: '2026-10-11T00:30:00Z',
+        }),
+      ],
+    });
+    expect(pickNext(s, config, NOW)).toMatchObject({
+      issue: null,
+      reason: expect.stringContaining('WIP limit') as string,
     });
   });
 

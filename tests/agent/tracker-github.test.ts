@@ -85,6 +85,13 @@ describe('GitHubTracker', () => {
                 reviewDecision: 'CHANGES_REQUESTED',
                 labels: { nodes: [{ name: 'size:S' }] },
                 closingIssuesReferences: { nodes: [{ number: 1 }] },
+                commits: { nodes: [{ commit: { committedDate: '2026-10-02T01:00:00Z' } }] },
+                latestReviews: {
+                  nodes: [
+                    { state: 'COMMENTED', submittedAt: '2026-10-02T05:00:00Z' },
+                    { state: 'CHANGES_REQUESTED', submittedAt: '2026-10-02T02:00:00Z' },
+                  ],
+                },
               },
             ],
           },
@@ -102,6 +109,8 @@ describe('GitHubTracker', () => {
         labels: ['size:S'],
         reviewDecision: 'CHANGES_REQUESTED',
         closesIssues: [1],
+        lastCommitAt: '2026-10-02T01:00:00Z',
+        lastChangesRequestedAt: '2026-10-02T02:00:00Z',
       },
     ]);
     expect(calls[0]?.body).toMatchObject({

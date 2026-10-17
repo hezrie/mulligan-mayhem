@@ -6,6 +6,7 @@ import type {
   PullRequest,
   ReviewDecision,
   Ticket,
+  TicketPatch,
   Tracker,
 } from './types.ts';
 
@@ -40,6 +41,8 @@ interface GqlPullRequests {
         reviewDecision: ReviewDecision;
         labels: { nodes: { name: string }[] };
         closingIssuesReferences: { nodes: { number: number }[] };
+        commits: { nodes: { commit: { committedDate: string } }[] };
+        latestReviews: { nodes: { state: string; submittedAt: string | null }[] };
       }[];
     };
   };
@@ -52,6 +55,8 @@ const OPEN_PRS = `query($owner: String!, $name: String!) {
         number title headRefName isDraft createdAt reviewDecision
         labels(first: 30) { nodes { name } }
         closingIssuesReferences(first: 10) { nodes { number } }
+        commits(last: 1) { nodes { commit { committedDate } } }
+        latestReviews(first: 20) { nodes { state submittedAt } }
       }
     }
   }
@@ -107,6 +112,13 @@ export class GitHubTracker implements Tracker {
       reviewDecision: pr.reviewDecision,
       labels: pr.labels.nodes.map((l) => l.name),
       closesIssues: pr.closingIssuesReferences.nodes.map((i) => i.number),
+      lastCommitAt: pr.commits.nodes[0]?.commit.committedDate ?? null,
+      lastChangesRequestedAt:
+        pr.latestReviews.nodes
+          .filter((r) => r.state === 'CHANGES_REQUESTED' && r.submittedAt)
+          .map((r) => r.submittedAt ?? '')
+          .sort()
+          .at(-1) ?? null,
     }));
   }
 
@@ -162,5 +174,24 @@ export class GitHubTracker implements Tracker {
 
   async comment(number: number, body: string): Promise<void> {
     await this.gh.rest('POST', `repos/${this.repo}/issues/${String(number)}/comments`, { body });
+  }
+
+  async updateTicket(number: number, patch: TicketPatch): Promise<void> {
+    const body: Record<string, string> = {};
+    if (patch.title !== undefined) body['title'] = patch.title;
+    if (patch.body !== undefined) body['body'] = patch.body;
+    if (patch.state !== undefined) body['state'] = patch.state;
+    if (patch.stateReason !== undefined) body['state_reason'] = patch.stateReason;
+    await this.gh.rest('PATCH', `repos/${this.repo}/issues/${String(number)}`, body);
+  }
+
+  async listTicketsByLabel(label: string): Promise<Ticket[]> {
+    const issues = await this.gh.restAll<RestIssue>(
+      `repos/${this.repo}/issues?state=all&per_page=100&labels=${encodeURIComponent(label)}`,
+    );
+    return issues
+      .filter((i) => i.pull_request === undefined)
+      .map(toTicket)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 }
