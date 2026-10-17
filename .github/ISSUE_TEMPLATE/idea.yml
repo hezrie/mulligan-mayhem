@@ -1,0 +1,25 @@
+name: 💡 Idea or bug
+description: Got an idea for the game, or found something broken? Describe it in your own words.
+title: '[Idea] '
+labels: ['status:needs-refinement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! Just describe it however you like. An assistant will turn it into a proper
+        ticket, and may ask you a question or two here.
+  - type: textarea
+    id: idea
+    attributes:
+      label: Describe your idea or bug
+      description: What would make the game more fun, or what went wrong? If it's a bug, what did you expect and what happened instead?
+      placeholder: When I hit the ball really hard it sometimes goes through the wall on hole 3…
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device (for bugs)
+      placeholder: e.g. iPhone 14 / Safari, Pixel 8 / Chrome, laptop / Firefox
+    validations:
+      required: false

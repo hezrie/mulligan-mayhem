@@ -12,7 +12,7 @@
 | 3     | Walking skeleton       | ✅ Done                           |
 | 4     | Guardrails             | ✅ Done                           |
 | 5     | CI/CD + repo + Pages   | ✅ Done                           |
-| 6     | Ticket system          | ⏳                                |
+| 6     | Ticket system          | ✅ Done                           |
 | 7     | Agent workflows        | ⏳ (needs secrets from you first) |
 | 8     | Seed backlog & dry run | ⏳                                |
 
@@ -291,6 +291,24 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 - Create and pin the "🤖 Agent Run Log" issue.
 - **Exit:** labels exist on GitHub; picker tests green; check green.
 
+- **As built:**
+  - **Labels.** `scripts/agent/labels.ts` holds every label as a constant. `npm run setup:labels` created all 26 on GitHub, and a second run changed nothing.
+  - **Issue forms.**
+    - `ticket.yml`: the full DoR form. Its field labels _are_ the canonical ticket sections, and the size dropdown has no L.
+    - `idea.yml`: one required field.
+    - Both apply `status:needs-refinement`, and blank issues are disabled.
+    - A test parses the forms and checks them against the ticket format and the label set.
+  - **Ticket format.** `scripts/agent/ticket-format.ts` renders and parses the canonical body, and runs a deterministic **structural DoR check**: sections present, size S/M, P0–P3, deps "None" or "Blocked by #N". Whether criteria are testable is still the LLM's call.
+  - **Tracker.** `Tracker` interface plus a `GitHubTracker` adapter built on an injectable `GhClient` that wraps `gh api` (REST + GraphQL, for review decisions and "Closes #N" links). `TRACKER=jira` has an obvious plug-in point.
+  - **Picker.** `pickNext` is a pure function over a snapshot (20 tests), with a CLI that was smoke-tested live.
+  - **Run log.** `scripts/agent/run-log.ts` defines a zod-validated JSON-per-comment format. **Run log issue #2** is pinned.
+- **Findings, both fixed:**
+  1. **Branch protection didn't actually require reviews.** PR #1 merged without one, because a required-approval count of 0 doesn't enforce code-owner review. It's now **1 required approval**: the reviewer agent's approval satisfies it for agent PRs, protected paths additionally need @hezrie, and your own foundation PRs merge via an explicit `--admin` bypass.
+  2. **The run-log setup created a duplicate (#3).** GitHub's label search lags issue creation. The script now checks pinned issues first, and all consumers pick the _lowest-numbered_ log. #3 is closed and unpinned.
+- **Deviations:**
+  - The picker outputs JSON (`{issue, mode, pr, reason}`) rather than a bare number, so the worker knows plan/implement/fix and why.
+  - Extra `meta:run-log` / `meta:digest` labels.
+
 ### Phase 7: Agent workflows
 
 - `agent-refine.yml`, `agent-worker.yml`, `agent-review.yml`, `agent-merge.yml`, `agent-close.yml`, `agent-digest.yml`, plus `.agent/prompts/{refiner,worker,worker-fix,planner,reviewer-pr,reviewer-plan,digest}.md` and `agent.config.json`.
@@ -359,3 +377,4 @@ Every phase ends with `npm run check` green, a conventional commit (`chore(found
 - 2026-10-17: Phase 3 complete: playable par-3 walking skeleton, 193 unit/invariant/replay tests, 19 e2e tests; Node and Chromium hashes match.
 - 2026-10-17: Phase 4 complete: hooks + settings + config + CODEOWNERS + PR template; 320 unit tests (77 hook cases).
 - 2026-10-17: Phase 5 complete: repo live and public, CI green on GitHub, Pages deployed, branch protection applied.
+- 2026-10-17: Phase 6 complete: labels live, issue forms, Tracker + GitHub adapter, picker, run log #2; protection tightened to 1 approval.
