@@ -57,6 +57,7 @@ jobs:
           EXPECTED_SLUG: ${{ vars.AGENT_APP_SLUG }}
           REPO: ${{ github.repository }}
           HAS_CLAUDE_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+          CLAUDE_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           WORKFLOWS_TOKEN: ${{ steps.workflows.outcome }}
           ADMIN_TOKEN: ${{ steps.admin.outcome }}
         run: |
@@ -89,6 +90,15 @@ jobs:
           else
             check "Claude credential" "CLAUDE_CODE_OAUTH_TOKEN is empty"
           fi
+          # The token's shape only, never its value: a pasted token often picks up a line break or
+          # loses its end when the terminal wraps it.
+          shape="${#CLAUDE_TOKEN} characters"
+          case "$CLAUDE_TOKEN" in sk-ant-oat01-*) ;; *) shape="$shape, does not start with sk-ant-oat01-" ;; esac
+          case "$CLAUDE_TOKEN" in *[[:space:]]*) shape="$shape, contains whitespace or a line break" ;; esac
+          case "$shape" in
+            *,*) check "Claude token shape" "$shape (run claude setup-token again and paste the whole token)" ;;
+            *) check "Claude token looks like a setup token ($shape)" ok ;;
+          esac
           exit $fail
 
   claude:
