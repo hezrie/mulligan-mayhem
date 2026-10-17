@@ -1363,6 +1363,37 @@ describe('close', () => {
   });
 });
 
+describe('close: crediting the right PR', () => {
+  it('credits the ticket’s own merged agent PR when another PR’s text closed it first', async () => {
+    const h = harness();
+    h.tracker.seed({ number: 12, state: 'closed', labels: ['status:in-review', 'size:S'] });
+    // A maintainer PR quoted "Closes #12" in its description and closed the ticket early.
+    h.prs.closing = { number: 23, title: 'fix: wiring', url: 'https://x/23' };
+    h.prs.pr = prInfo({ number: 23, headRef: 'fix/review-merge-wiring', author: 'hezrie' });
+    h.prs.merged = [prInfo({ number: 19, title: 'feat: sand (#12)', url: 'https://x/19' })];
+    await cmdClose(h.ctx, { issue: '12' });
+    expect(h.tracker.commentsOn(12)[0]).toContain('[#19 feat: sand (#12)](https://x/19)');
+    expect(h.tracker.runLog()[0]).toMatchObject({ role: 'closer', issue: 12, pr: 19 });
+  });
+
+  it('credits nothing when no agent PR of this ticket was merged (closed by hand, or another ticket’s PR)', async () => {
+    const h = harness();
+    h.tracker.seed({ number: 12, state: 'closed', labels: ['size:S'] });
+    h.prs.closing = null;
+    h.prs.merged = [prInfo({ number: 40, headRef: 'agent/13-ice' })];
+    await cmdClose(h.ctx, { issue: '12' });
+    expect(h.tracker.runLog()).toEqual([]);
+    expect(h.tracker.commentsOn(12)).toEqual([]);
+
+    const fork = harness();
+    fork.tracker.seed({ number: 12, state: 'closed', labels: ['size:S'] });
+    fork.prs.closing = null;
+    fork.prs.merged = [prInfo({ number: 41, headRepo: 'attacker/fork', author: 'attacker' })];
+    await cmdClose(fork.ctx, { issue: '12' });
+    expect(fork.tracker.runLog()).toEqual([]);
+  });
+});
+
 describe('refine', () => {
   it('asks strangers to wait for triage (once), and lets the owner through', async () => {
     const h = harness();
