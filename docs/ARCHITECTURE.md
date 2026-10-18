@@ -19,20 +19,22 @@ tested headlessly**, so CI, not an agent's opinion, decides whether a change wor
             ┌──────────────┐ drives        ▲
  Playwright▶│ src/testing  │───────────────┘   (dev/test/e2e builds only)
             └──────────────┘
-                 src/main.ts wires everything together (wiring only)
+     src/app/ (composition root) creates the layers, connects them and runs the frame loop;
+     src/main.ts only boots src/app and, in dev/test builds, src/testing
 ```
 
-| Rule                                                          | Enforced by                                   |
-| ------------------------------------------------------------- | --------------------------------------------- |
-| core imports only core (+ `zod`)                              | dependency-cruiser `core-is-pure`             |
-| input / render / ui / testing import only core                | dependency-cruiser `*-depends-only-on-core`   |
-| only `main.ts` loads `src/testing`; nothing imports `main.ts` | dependency-cruiser                            |
-| no circular imports; no devDependencies in shipped code       | dependency-cruiser                            |
-| core: no DOM, timers, `Date`, `console`, `globalThis`         | ESLint `no-restricted-globals`                |
-| core: no `Math.random`; no engine-dependent `Math.*` or `**`  | ESLint `no-restricted-properties` / `-syntax` |
-| render/ui don't mutate state                                  | `Readonly` types (TypeScript)                 |
-| `main.ts` stays small                                         | ESLint `max-lines` (120)                      |
-| `window.__MM__` absent from production                        | `__TEST_API__` define + `prod-smoke` e2e      |
+| Rule                                                            | Enforced by                                   |
+| --------------------------------------------------------------- | --------------------------------------------- |
+| core imports only core (+ `zod`)                                | dependency-cruiser `core-is-pure`             |
+| input / render / ui / testing import only core                  | dependency-cruiser `*-depends-only-on-core`   |
+| only `main.ts` loads `src/testing`; nothing imports `main.ts`   | dependency-cruiser                            |
+| `src/app` imports core/input/render/ui; only `main.ts` loads it | dependency-cruiser `only-main-loads-app`      |
+| no circular imports; no devDependencies in shipped code         | dependency-cruiser                            |
+| core: no DOM, timers, `Date`, `console`, `globalThis`           | ESLint `no-restricted-globals`                |
+| core: no `Math.random`; no engine-dependent `Math.*` or `**`    | ESLint `no-restricted-properties` / `-syntax` |
+| render/ui don't mutate state                                    | `Readonly` types (TypeScript)                 |
+| `main.ts` stays a boot file; `src/app` files stay small         | ESLint `max-lines` (40 / 200 per file)        |
+| `window.__MM__` absent from production                          | `__TEST_API__` define + `prod-smoke` e2e      |
 
 ## Core modules
 
@@ -156,7 +158,7 @@ On top of field types, validation enforces several layout rules:
   `min(dragLength / MAX_DRAG, 1)`.
 - A release with power below a small threshold is a cancel, not a stroke.
 
-`main.ts` passes in the render layer's screen↔world transform, so input never imports render.
+`src/app` passes in the render layer's screen↔world transform, so input never imports render.
 
 ## Test API (`window.__MM__`, dev/test/e2e builds only)
 

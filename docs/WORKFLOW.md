@@ -30,7 +30,7 @@ you need to do, and how to stop everything from your phone.
 | Step      | Workflow           | Trigger                                                                                          | LLM? |
 | --------- | ------------------ | ------------------------------------------------------------------------------------------------ | ---- |
 | Refine    | `agent-refine.yml` | issue labelled `status:needs-refinement`                                                         | yes  |
-| Work      | `agent-worker.yml` | cron (every 2h) or **Run workflow** (optional issue number)                                      | yes  |
+| Work      | `agent-worker.yml` | cron (hourly) or **Run workflow** (optional issue number)                                        | yes  |
 | Review    | `agent-review.yml` | CI finished on an internal `agent/*` PR, `plan:proposed`, or the hourly sweep for missed reviews | yes  |
 | Merge     | `agent-merge.yml`  | called after an approval; hourly sweep; or by hand                                               | no   |
 | Close     | `agent-close.yml`  | issue closed                                                                                     | no   |
@@ -75,9 +75,9 @@ The picker (`scripts/agent/pick-next.ts`) is deterministic, with no LLM.
    - M tickets with `plan:approved` first
    - then `status:ready` by priority (P0 first)
    - then oldest first
-3. **WIP limit** (default 1). Tickets `in-progress` or `in-review` count toward it;
+3. **WIP limit** (`wipLimit`, currently 2). Tickets `in-progress` or `in-review` count toward it;
    `needs-human` tickets don't.
-4. **Daily cap** (default 6 plan or implement runs per UTC day). It is counted from the run log,
+4. **Daily cap** (`maxTicketsStartedPerDay`, currently 12 plan or implement runs per UTC day). It is counted from the run log,
    from entries written by the bot only. Fix passes don't count.
 5. **Skips.** The picker skips anything that is:
    - blocked by an open issue

@@ -130,8 +130,15 @@ export default defineConfig(
   {
     files: ['src/main.ts'],
     rules: {
-      // main.ts is wiring only; real logic belongs in a layer.
-      'max-lines': ['error', { max: 120, skipBlankLines: true, skipComments: true }],
+      // main.ts only boots src/app (and the dev/test API); wiring lives in src/app.
+      'max-lines': ['error', { max: 40, skipBlankLines: true, skipComments: true }],
+    },
+  },
+  {
+    files: ['src/app/**/*.ts'],
+    rules: {
+      // The composition root wires layers together; split a growing file into siblings.
+      'max-lines': ['error', { max: 200, skipBlankLines: true, skipComments: true }],
     },
   },
   {

@@ -35,7 +35,8 @@ src/input/    pointer/touch → Shot { angle, power 0..1 }      (may import core
 src/render/   canvas renderer; reads state, never mutates it  (may import core only)
 src/ui/       DOM HUD, menus, hole-complete screen            (may import core only)
 src/testing/  window.__MM__ test API, dev/test builds only    (may import core only)
-src/main.ts   wiring only (≤120 lines, enforced)
+src/app/      composition root: creates the layers, wires them, runs the loop (imports core/input/render/ui)
+src/main.ts   boot only: starts src/app (+ the test API in dev/test builds); ≤40 lines, enforced
 ```
 
 Details, data flow and the hole schema: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Why custom
