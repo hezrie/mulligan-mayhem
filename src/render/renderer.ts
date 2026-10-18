@@ -4,7 +4,7 @@ import type { Shot } from '../core/game/shot.ts';
 import type { Vec2 } from '../core/math/vec2.ts';
 import { BALL_RADIUS } from '../core/physics/constants.ts';
 import { scoreName } from '../core/scoring/score.ts';
-import { aimStrokeStyles } from './aim.ts';
+import { aimStrokeStyles, aimVisual, bandEnd, ringTicks, type AimVisual } from './aim.ts';
 import { lerp } from './easing.ts';
 import { countEvents, ZERO_COUNTS, type EventCounts, type FrameInput } from './fx-frame.ts';
 import { COLORS, TERRAIN_COLORS } from './palette.ts';
@@ -22,6 +22,11 @@ const PADDING = 16;
 const WALL_WIDTH = 4;
 const STAMP_FONT = 'bold 24px sans-serif';
 const STAMP_OUTLINE_WIDTH = 3;
+const CANCEL_TEXT = 'Release to cancel';
+const CANCEL_FONT = 'bold 12px sans-serif';
+/** Below the ball, clear of the power ring. */
+const CANCEL_TEXT_OFFSET = 30;
+const TICK_WIDTH = 2;
 
 /** What the renderer remembers about the drop it is animating. */
 interface Plunk {
@@ -38,6 +43,8 @@ export type RendererFxSnapshot = Readonly<{
   events: EventCounts;
   /** The cup plunk while holed, otherwise null. */
   plunk: Readonly<{ elapsedMs: number; stamp: string; done: boolean }> | null;
+  /** The aim drawn in the last frame, or null when there was none. */
+  aim: AimVisual | null;
 }>;
 
 export interface Renderer {
@@ -71,6 +78,48 @@ function drawAim(ctx: CanvasRenderingContext2D, from: Vec2, aim: Shot): void {
     ctx.stroke();
   }
   ctx.setLineDash([]);
+}
+
+/** A line with a dark outline 2 units wider underneath, so it reads on every terrain. */
+function strokeOutlined(
+  ctx: CanvasRenderingContext2D,
+  from: Vec2,
+  to: Vec2,
+  color: string,
+  width: number,
+): void {
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.lineTo(to.x, to.y);
+  ctx.strokeStyle = COLORS.aimOutline;
+  ctx.lineWidth = width + 2;
+  ctx.stroke();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.stroke();
+}
+
+function drawBand(ctx: CanvasRenderingContext2D, ball: Vec2, aim: Shot, visual: AimVisual): void {
+  ctx.lineCap = 'round';
+  strokeOutlined(ctx, ball, bandEnd(ball, aim), visual.color, visual.bandWidth);
+}
+
+function drawRing(ctx: CanvasRenderingContext2D, ball: Vec2, visual: AimVisual): void {
+  for (const tick of ringTicks(ball, visual)) {
+    strokeOutlined(ctx, tick.from, tick.to, tick.color, TICK_WIDTH);
+  }
+}
+
+function drawCancelHint(ctx: CanvasRenderingContext2D, ball: Vec2): void {
+  const y = ball.y + CANCEL_TEXT_OFFSET;
+  ctx.font = CANCEL_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.strokeStyle = COLORS.aimOutline;
+  ctx.lineWidth = STAMP_OUTLINE_WIDTH;
+  ctx.strokeText(CANCEL_TEXT, ball.x, y);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(CANCEL_TEXT, ball.x, y);
 }
 
 function drawBall(ctx: CanvasRenderingContext2D, pos: Vec2, radius: number): void {
@@ -141,6 +190,7 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
   // The drop is detected from what the renderer saw last frame, so the game emits nothing extra.
   let prevBallPos: Vec2 | null = null;
   let plunk: Plunk | null = null;
+  let lastAim: AimVisual | null = null;
 
   // Keep the backing store matched to the canvas's CSS size × device pixel ratio, so drawing is
   // crisp and the view fits what's on screen. A ResizeObserver catches every layout change
@@ -216,11 +266,22 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
         };
       }
 
+      lastAim = null;
       if (!plunk) {
         drawFlag(ctx, course.cup, 0);
         const { pos } = state.ball;
-        if (aim && state.phase === 'aiming') drawAim(ctx, pos, aim);
+        const shown = aim && state.phase === 'aiming' ? aim : null;
+        const visual = shown ? aimVisual(shown) : null;
+        if (shown && visual) {
+          if (!visual.cancel) drawAim(ctx, pos, shown);
+          drawBand(ctx, pos, shown, visual);
+        }
         drawBall(ctx, pos, BALL_RADIUS);
+        if (visual) {
+          drawRing(ctx, pos, visual);
+          if (visual.cancel) drawCancelHint(ctx, pos);
+        }
+        lastAim = visual;
         return;
       }
 
@@ -255,6 +316,7 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
             done: plunkFrame(nowMs - plunk.startMs).done,
           }
         : null,
+      aim: lastAim,
     }),
   };
 }
