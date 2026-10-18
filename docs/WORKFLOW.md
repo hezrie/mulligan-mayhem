@@ -5,8 +5,11 @@ you need to do, and how to stop everything from your phone.
 
 ## Your job in one minute
 
-1. **Promote** tickets you want built: `status:proposed` → `status:ready`. Ideas from you,
-   collaborators and `trustedSubmitters` are refined straight into `status:ready`.
+1. **Steer the roadmap.** Planned tickets (`epic:*` labels) are queued automatically, by priority,
+   whenever fewer than `autoPromoteMinReady` startable tickets are waiting. To build something sooner,
+   raise its priority or set it to `status:ready` yourself; to hold one back, remove its `epic:` label.
+   Ideas from you, collaborators and `trustedSubmitters` are refined straight into `status:ready`;
+   the AI's own suggestions (`source:agent`) are never queued automatically.
 2. **Answer** anything labelled `status:needs-human`, then set it back to `status:ready`
    (or `status:needs-refinement` if it should be rewritten).
 3. **Merge** PRs marked "✅ Ready for human merge". At autonomy level 1, that's every PR. To have
@@ -67,6 +70,9 @@ The picker (`scripts/agent/pick-next.ts`) is deterministic, with no LLM.
      PR gets reviewed instead of a duplicate being opened.
    - A `status:in-review` ticket with no open agent PR (it was closed without merging) goes to
      `status:needs-human`, so it doesn't hold the WIP slot.
+   - **Top up the queue:** if fewer than `autoPromoteMinReady` (currently 5) ready tickets can start,
+     planned `status:proposed` tickets with an `epic:*` label, no open blockers and no
+     `source:agent` label are queued, by priority, then oldest first.
 1. **Finish before starting.** An agent PR with "changes requested" from the reviewer agent or a
    maintainer gets a fix pass, working from that review and its line comments. This happens even at
    the WIP limit, but only once per review: fixes that are already pushed wait for re-review.

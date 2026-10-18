@@ -5,6 +5,7 @@ import {
   orphanedTickets,
   pickNext,
   pickSpecific,
+  promotionCandidates,
   ticketOfPr,
   type Snapshot,
 } from '../../scripts/agent/pick-next.ts';
@@ -349,6 +350,46 @@ describe('pickSpecific (manual dispatch)', () => {
       pullRequests: [pr(20, 'agent/4-x', BOT_CHANGES)],
     });
     expect(pickSpecific(s, 4)).toMatchObject({ mode: 'fix', pr: 20 });
+  });
+});
+
+describe('auto-promotion from the roadmap', () => {
+  const planned = (n: number, prio: string, extra: Partial<Ticket> = {}) =>
+    ticket(n, ['status:proposed', 'size:S', prio, 'epic:juice'], extra);
+
+  it('tops the queue up to the minimum with startable planned tickets, by priority then age', () => {
+    const s = snap({
+      tickets: [
+        ticket(1, READY_S),
+        planned(10, 'priority:P2'),
+        planned(11, 'priority:P0'),
+        planned(12, 'priority:P0'),
+        planned(13, 'priority:P1'),
+      ],
+    });
+    expect(promotionCandidates(s, 3).map((t) => t.number)).toEqual([11, 12]);
+    expect(promotionCandidates(s, 1)).toEqual([]);
+    expect(promotionCandidates(s, 0)).toEqual([]);
+  });
+
+  it('never promotes agent proposals, unplanned tickets or tickets still blocked by an open issue', () => {
+    const s = snap({
+      tickets: [
+        ticket(20, ['status:proposed', 'size:S', 'priority:P0', 'source:agent', 'epic:juice']),
+        ticket(21, ['status:proposed', 'size:S', 'priority:P0']),
+        planned(22, 'priority:P0', { body: 'Blocked by #23' }),
+        planned(23, 'priority:P1'),
+        planned(24, 'priority:P1', { body: 'Blocked by #5' }), // #5 is closed (not in the open list)
+      ],
+    });
+    expect(promotionCandidates(s, 5).map((t) => t.number)).toEqual([23, 24]);
+  });
+
+  it('counts only startable ready tickets: a blocked ready ticket does not fill the queue', () => {
+    const s = snap({
+      tickets: [ticket(1, READY_S, { body: 'Blocked by #2' }), planned(2, 'priority:P1')],
+    });
+    expect(promotionCandidates(s, 1).map((t) => t.number)).toEqual([2]);
   });
 });
 

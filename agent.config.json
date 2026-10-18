@@ -7,6 +7,7 @@
   },
   "wipLimit": 2,
   "maxTicketsStartedPerDay": 12,
+  "autoPromoteMinReady": 5,
   "maxAttemptsPerTicket": 2,
   "maxAgentProposedTicketsPerDay": 3,
   "maxTurns": {

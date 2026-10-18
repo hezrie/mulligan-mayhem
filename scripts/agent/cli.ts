@@ -42,6 +42,7 @@ import {
   orphanedTickets,
   pickNext,
   pickSpecific,
+  promotionCandidates,
   readyWithOpenPr,
   strandedInReview,
   ticketOfPr,
@@ -387,10 +388,32 @@ async function repairStuckStates(ctx: Ctx, snapshot: Snapshot): Promise<number> 
   return repaired;
 }
 
+/** Tops the queue up from the planned backlog (autoPromoteMinReady), so the loop never runs dry. */
+async function topUpQueue(ctx: Ctx, snapshot: Snapshot): Promise<number> {
+  const promote = promotionCandidates(snapshot, ctx.config.autoPromoteMinReady);
+  for (const ticket of promote) {
+    await setStatus(ctx, ticket, STATUS.ready);
+    const epic = ticket.labels.find((l) => l.startsWith('epic:')) ?? 'the roadmap';
+    await ctx.tracker.comment(
+      ticket.number,
+      `🤖 Queued automatically from the roadmap (\`${epic}\`): fewer than ${String(ctx.config.autoPromoteMinReady)} startable tickets were waiting. To hold it back, set it to \`${STATUS.proposed}\` and remove its \`epic:\` label.`,
+    );
+  }
+  if (promote.length > 0) {
+    ctx.summary(
+      `Queued from the roadmap: ${promote.map((t) => `#${String(t.number)}`).join(', ')}`,
+    );
+  }
+  return promote.length;
+}
+
 export async function cmdPick(ctx: Ctx, args: Args): Promise<void> {
   let snapshot = await loadSnapshot(ctx.tracker, META.runLog, trustedAuthors(ctx));
   const fixed = (await recoverOrphans(ctx, snapshot)) + (await repairStuckStates(ctx, snapshot));
   if (fixed > 0) snapshot = await loadSnapshot(ctx.tracker, META.runLog, trustedAuthors(ctx));
+  if ((await topUpQueue(ctx, snapshot)) > 0) {
+    snapshot = await loadSnapshot(ctx.tracker, META.runLog, trustedAuthors(ctx));
+  }
   const requested = optionalInt(args, 'issue');
   const pick = requested
     ? pickSpecific(snapshot, requested)

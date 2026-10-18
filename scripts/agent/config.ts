@@ -15,6 +15,11 @@ export const AgentConfigSchema = z.strictObject({
   autoMergeSizes: z.strictObject({ '1': z.array(Size), '2': z.array(Size), '3': z.array(Size) }),
   wipLimit: z.int().min(1),
   maxTicketsStartedPerDay: z.int().min(1),
+  /**
+   * Keep at least this many startable tickets queued by promoting planned backlog tickets
+   * (status:proposed with an epic:* label, never agent proposals) in priority order. 0 = off.
+   */
+  autoPromoteMinReady: z.int().min(0),
   maxAttemptsPerTicket: z.int().min(1),
   maxAgentProposedTicketsPerDay: z.int().min(0),
   maxTurns: PerRole(z.int().min(1)),
