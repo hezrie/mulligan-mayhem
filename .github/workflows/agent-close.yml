@@ -45,3 +45,18 @@ jobs:
           APP_SLUG: ${{ steps.app.outputs.app-slug }}
           ISSUE: ${{ github.event.issue.number }}
         run: npx tsx scripts/agent/cli.ts close --issue "$ISSUE"
+
+  # MAX mode: a closed ticket usually means a merge just freed a slot, so start a worker run now
+  # instead of waiting for the schedule.
+  kick-worker:
+    needs: close
+    if: vars.AGENT_MAX_MODE == 'true' && vars.AGENT_PAUSED != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Start a worker run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run agent-worker.yml --repo "$GITHUB_REPOSITORY" --ref main

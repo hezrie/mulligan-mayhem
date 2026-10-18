@@ -272,6 +272,8 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+    outputs:
+      outcome: ${{ steps.finish.outputs.outcome }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -323,3 +325,22 @@ jobs:
         run: |
           echo "::error::Infrastructure failure: see the comment on the ticket and the work job."
           exit 1
+
+  # MAX mode doesn't wait for GitHub's (late, sometimes dropped) schedule: a run that did real work
+  # starts the next one. The chain ends by itself when nothing can start (no finish job), at the
+  # daily cap, on an infrastructure failure, or when MAX mode or the kill switch is turned off.
+  chain:
+    needs: finish
+    if: >-
+      vars.AGENT_MAX_MODE == 'true' && vars.AGENT_PAUSED != 'true' &&
+      needs.finish.result == 'success' && needs.finish.outputs.outcome != 'infra-failure' &&
+      needs.finish.outputs.outcome != 'paused'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Start the next worker run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run agent-worker.yml --repo "$GITHUB_REPOSITORY" --ref main
