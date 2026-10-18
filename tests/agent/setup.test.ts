@@ -160,4 +160,62 @@ describe('seed backlog (Phase 8)', () => {
     expect(second.filter((r) => r.created)).toEqual([]);
     expect(created).toHaveLength(BACKLOG.length);
   });
+
+  it('loads a planned backlog: epic labels (created once), existing-issue blockers, queued chains', async () => {
+    const base = BACKLOG[0]!;
+    const planned = [
+      {
+        ...base,
+        key: 'feel-a',
+        title: 'Feel A',
+        ready: true,
+        blockedBy: [],
+        labels: ['epic:feel'],
+      },
+      {
+        ...base,
+        key: 'feel-b',
+        title: 'Feel B',
+        ready: true,
+        blockedBy: ['feel-a'],
+        blockedByIssues: [12],
+        labels: ['epic:feel'],
+      },
+      {
+        ...base,
+        key: 'feel-c',
+        title: 'Feel C',
+        ready: false,
+        blockedBy: ['feel-b'],
+        labels: ['epic:feel'],
+      },
+    ];
+    expect(backlogProblems(planned)).toEqual([]);
+    expect(
+      backlogProblems([
+        planned[2]!,
+        { ...planned[1]!, key: 'x', title: 'X', blockedBy: ['feel-c'] },
+      ]),
+    ).toContainEqual(expect.stringContaining('can only wait on ready tickets'));
+    expect(backlogProblems([{ ...planned[0]!, labels: ['status:ready'] }])).toContainEqual(
+      expect.stringContaining('unexpected label'),
+    );
+
+    const posts: { path: string; body: unknown }[] = [];
+    const gh: GhClient = {
+      rest: <T>(_method: HttpMethod, path: string, body?: unknown): Promise<T> => {
+        posts.push({ path, body });
+        return Promise.resolve({ number: 100 + posts.length } as T);
+      },
+      restAll: <T>(): Promise<T[]> => Promise.resolve([] as T[]),
+      graphql: <T>(): Promise<T> => Promise.resolve(null as T),
+    };
+    await seedBacklog(gh, 'o/r', planned);
+    expect(posts.filter((p) => p.path === 'repos/o/r/labels')).toHaveLength(1);
+    const issues = posts.filter((p) => p.path === 'repos/o/r/issues');
+    const b = issues[1]!.body as { body: string; labels: string[] };
+    expect(blockers(b.body)).toEqual([12, 102]);
+    expect(b.labels).toContain('epic:feel');
+    expect(b.labels).toContain('status:ready');
+  });
 });
