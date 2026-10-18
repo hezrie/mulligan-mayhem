@@ -1,10 +1,15 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { getHole } from '../../../src/core/course/holes/index.ts';
+import { ShotRejectedError, type GameEvent } from '../../../src/core/game/machine.ts';
+import { ReplayFileSchema, type ReplayFile } from '../../../src/core/game/replay.ts';
 import { GameSession } from '../../../src/core/game/session.ts';
+import type { Shot } from '../../../src/core/game/shot.ts';
 import { hashState } from '../../../src/core/hash.ts';
 import { DT } from '../../../src/core/physics/constants.ts';
-import { installTestApi, type TestApiHost } from '../../../src/testing/api.ts';
-import type { FxSnapshot } from '../../../src/testing/types.ts';
+import { installTestApi, type TestApiDeps, type TestApiHost } from '../../../src/testing/api.ts';
+import type { CueEntry, FxSnapshot } from '../../../src/testing/types.ts';
 
 function setup(fxSnapshot?: () => FxSnapshot) {
   const host: TestApiHost = {};
@@ -97,5 +102,170 @@ describe('window.__MM__ test API', () => {
     expect(api.getFx()).toEqual({ a: 1 });
     current = { a: 2 };
     expect(api.getFx()).toEqual({ a: 2 });
+  });
+});
+
+function loadReplay(file: string): ReplayFile {
+  const path = join(import.meta.dirname, '../../replays', file);
+  return ReplayFileSchema.parse(JSON.parse(readFileSync(path, 'utf8')));
+}
+
+function setupWithHooks(audio?: TestApiDeps['audio']) {
+  const shots: { shot: Shot; step: number }[] = [];
+  const events: { event: GameEvent; step: number }[] = [];
+  const api = installTestApi(
+    {},
+    {
+      session: new GameSession(getHole('skeleton-01'), 1),
+      getHole,
+      useManualClock: () => undefined,
+      worldToClient: (p) => p,
+      onShot: (shot, step) => shots.push({ shot, step }),
+      onEvent: (event, step) => events.push({ event, step }),
+      ...(audio ? { audio } : {}),
+    },
+  );
+  return { api, shots, events };
+}
+
+function playThroughApi(file: string) {
+  const replay = loadReplay(file);
+  const ctx = setupWithHooks();
+  ctx.api.loadHole(replay.holeId, replay.seed);
+  for (const s of replay.shots) {
+    if (ctx.api.getState().phase !== 'aiming') break;
+    ctx.api.shoot(s.angle, s.power);
+    ctx.api.fastForward('untilRest');
+  }
+  return ctx;
+}
+
+function fakeAudio() {
+  let log: CueEntry[] = [{ channel: 'sfx', cue: 'putt', step: 0 }];
+  let clears = 0;
+  const audio = {
+    cueLog: {
+      entries: () => log,
+      clear: () => {
+        clears++;
+        log = [];
+      },
+    },
+    debugState: () => ({ engine: 'fake', muted: false, volume: 0.5 }),
+  };
+  return {
+    audio,
+    setLog: (l: CueEntry[]) => {
+      log = l;
+    },
+    clears: () => clears,
+  };
+}
+
+describe('window.__MM__ test API: shot and event forwarding', () => {
+  it('shoot calls onShot with the shot and the step it was taken at', () => {
+    const { api, shots } = setupWithHooks();
+    api.loadHole('skeleton-01');
+    api.fastForward(100);
+    api.shoot(0.25, 0.5);
+    expect(shots).toEqual([{ shot: { angle: 0.25, power: 0.5 }, step: 12 }]);
+  });
+
+  it('a rejected shot throws ShotRejectedError and does not call onShot', () => {
+    const { api, shots } = setupWithHooks();
+    api.loadHole('skeleton-01');
+    api.shoot(0, 0.5);
+    expect(() => {
+      api.shoot(0, 0.5);
+    }).toThrow(ShotRejectedError);
+    expect(shots).toHaveLength(1);
+  });
+
+  it('forwards every shot and event of the hole-in-one replay', () => {
+    const { shots, events } = playThroughApi('skeleton-01-hole-in-one.json');
+    expect(shots.map((s) => s.step)).toEqual([0]);
+    expect(events.map((e) => [e.event.type, e.step])).toEqual([
+      ['bounce', 55],
+      ['cup', 151],
+      ['holed', 151],
+    ]);
+    const bounce = events[0]?.event;
+    expect(bounce?.type === 'bounce' && bounce.impulse.toFixed(3)).toBe('817.266');
+    expect(events[2]?.event).toEqual({ type: 'holed', strokes: 1 });
+  });
+
+  it('forwards every shot and event of the par replay', () => {
+    const { shots, events } = playThroughApi('skeleton-01-par.json');
+    expect(shots.map((s) => s.step)).toEqual([0, 157, 268]);
+    expect(events.map((e) => [e.event.type, e.step])).toEqual([
+      ['rest', 157],
+      ['rest', 268],
+      ['cup', 294],
+      ['holed', 294],
+    ]);
+    expect(events[3]?.event).toEqual({ type: 'holed', strokes: 3 });
+  });
+
+  it.each([
+    'skeleton-01-hole-in-one.json',
+    'skeleton-01-par.json',
+    'skeleton-01-wall-bank-bogey.json',
+  ])('fastForward(untilRest) matches runUntilRest shot by shot in %s', (file) => {
+    const replay = loadReplay(file);
+    const { api } = setupWithHooks();
+    api.loadHole(replay.holeId, replay.seed);
+    const twin = new GameSession(getHole(replay.holeId), replay.seed);
+    for (const s of replay.shots) {
+      if (twin.state.phase !== 'aiming') break;
+      api.shoot(s.angle, s.power);
+      twin.shoot(s);
+      expect(api.fastForward('untilRest')).toBe(twin.runUntilRest());
+      expect(api.getStateHash()).toBe(hashState(twin.state));
+    }
+  });
+
+  it('fastForward(500) still runs 60 steps', () => {
+    const { api } = setupWithHooks();
+    api.loadHole('skeleton-01');
+    expect(api.fastForward(500)).toBe(60);
+  });
+});
+
+describe('window.__MM__ test API: audio', () => {
+  it('getCueLog returns a detached copy of the cue log', () => {
+    const { api } = setupWithHooks(fakeAudio().audio);
+    const copy = api.getCueLog();
+    expect(copy).toEqual([{ channel: 'sfx', cue: 'putt', step: 0 }]);
+    copy.push({ channel: 'x', cue: 'y', step: 1 });
+    expect(api.getCueLog()).toEqual([{ channel: 'sfx', cue: 'putt', step: 0 }]);
+  });
+
+  it('clearCueLog clears the audio cue log', () => {
+    const fake = fakeAudio();
+    const { api } = setupWithHooks(fake.audio);
+    api.clearCueLog();
+    expect(fake.clears()).toBe(1);
+    expect(api.getCueLog()).toEqual([]);
+  });
+
+  it('getAudioState returns the audio debug state', () => {
+    const { api } = setupWithHooks(fakeAudio().audio);
+    expect(api.getAudioState()).toEqual({ engine: 'fake', muted: false, volume: 0.5 });
+  });
+
+  it('loadHole clears the cue log', () => {
+    const fake = fakeAudio();
+    const { api } = setupWithHooks(fake.audio);
+    fake.setLog([{ channel: 'sfx', cue: 'tonk', step: 3 }]);
+    api.loadHole('skeleton-01');
+    expect(fake.clears()).toBe(1);
+    expect(api.getCueLog()).toEqual([]);
+  });
+
+  it('without audio, the cue log is empty and the engine is absent', () => {
+    const { api } = setupWithHooks();
+    expect(api.getCueLog()).toEqual([]);
+    api.clearCueLog();
+    expect(api.getAudioState()).toEqual({ engine: 'absent' });
   });
 });
