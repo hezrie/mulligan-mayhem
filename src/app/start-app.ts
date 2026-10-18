@@ -48,7 +48,10 @@ export function startApp(app: HTMLElement, canvas: HTMLCanvasElement): AppHandle
     last = now;
     accumulator = clock.accumulator;
     if (!manualClock) session.advance(clock.steps);
-    renderer.draw(session.course, session.state, aim);
+    renderer.draw(session.course, session.state, aim, {
+      nowMs: now,
+      events: session.drainEvents(),
+    });
     hud.update(session.state, session.course.hole);
     complete.update(session.state, session.course.hole);
     requestAnimationFrame(frame);
