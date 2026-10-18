@@ -36,6 +36,11 @@ describe('COLORS', () => {
   it('outlines the aim line in near-black', () => {
     expect(COLORS).toHaveProperty('aimOutline', '#1a1a1a');
   });
+
+  it('pins the flag pennant and pole colours', () => {
+    expect(COLORS).toHaveProperty('flag', '#e8443a');
+    expect(COLORS).toHaveProperty('flagPole', '#f4efe1');
+  });
 });
 
 describe('READABLE_STROKES', () => {
@@ -44,6 +49,8 @@ describe('READABLE_STROKES', () => {
       { name: 'aimWeak', fill: '#ffe066', outline: '#1a1a1a' },
       { name: 'aimStrong', fill: '#ff4d4d', outline: '#1a1a1a' },
       { name: 'ball', fill: '#ffffff', outline: '#2b2b2b' },
+      { name: 'flag', fill: '#e8443a', outline: '#1a1a1a' },
+      { name: 'flagPole', fill: '#f4efe1', outline: '#1a1a1a' },
     ]);
   });
 });
