@@ -8,6 +8,7 @@ import { attachAimInput } from '../input/pointer.ts';
 import { createRenderer, type Renderer } from '../render/renderer.ts';
 import { createCompleteScreen } from '../ui/complete-screen.ts';
 import { createHud } from '../ui/hud.ts';
+import { createShell } from '../ui/shell.ts';
 
 /** What main.ts hands to the dev/test-only test API. */
 export interface AppHandles {
@@ -40,6 +41,7 @@ export function startApp(app: HTMLElement, canvas: HTMLCanvasElement): AppHandle
   };
   const hud = createHud(app, restart);
   const complete = createCompleteScreen(app, restart);
+  createShell(app, { window });
 
   let accumulator = 0;
   let last = performance.now();
