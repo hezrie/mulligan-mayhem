@@ -10,8 +10,8 @@ name: Agent Worker
 
 on:
   schedule:
-    - cron: '0 * * * *' # must equal workerCron in agent.config.json (enforced by check:integrity)
-    - cron: '15,30,45 * * * *' # maxModeCron: these runs only act while vars.AGENT_MAX_MODE is 'true'
+    - cron: '7 * * * *' # must equal workerCron in agent.config.json (enforced by check:integrity)
+    - cron: '22,37,52 * * * *' # maxModeCron: these runs only act while vars.AGENT_MAX_MODE is 'true'
   workflow_dispatch:
     inputs:
       issue:
@@ -28,10 +28,11 @@ concurrency:
 
 jobs:
   pick:
-    # MAX mode (repo variable AGENT_MAX_MODE=true) adds the quarter-hour runs.
+    # MAX mode (repo variable AGENT_MAX_MODE=true) adds the :22/:37/:52 runs. Off-peak minutes:
+    # GitHub delays or drops scheduled runs at busy minutes like :00 and :15.
     if: >-
       vars.AGENT_PAUSED != 'true' &&
-      (github.event.schedule != '15,30,45 * * * *' || vars.AGENT_MAX_MODE == 'true')
+      (github.event.schedule != '22,37,52 * * * *' || vars.AGENT_MAX_MODE == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

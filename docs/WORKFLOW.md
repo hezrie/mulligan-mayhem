@@ -177,7 +177,7 @@ change level, using the rules in `scripts/agent/digest.ts`:
 ## MAX mode
 
 Repository variable **`AGENT_MAX_MODE`**. Set it to `true` (phone: repo → Settings → Secrets and
-variables → Actions → Variables) and the worker also runs at :15, :30 and :45, with
+variables → Actions → Variables) and the worker also runs at :22, :37 and :52 (besides its hourly run at :07), with
 `maxMode` limits from `agent.config.json` (currently 3 in flight, 40 started a day). Set it back to
 `false` to return to the hourly pace. It uses your Claude plan much faster; if you hit its usage
 limits, runs fail as infrastructure problems and the circuit breaker pauses the worker.
