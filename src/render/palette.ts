@@ -19,6 +19,12 @@ export const COLORS = {
   aimWeak: '#ffe066',
   aimStrong: '#ff4d4d',
   aimOutline: '#1a1a1a',
+  // The slingshot power ramp: green when soft, yellow by 0.6, red at full power.
+  powerLow: '#4caf50',
+  powerMid: '#ffe066',
+  powerHigh: '#ff4d4d',
+  // A release that would cancel is greyed out so it reads as "nothing will happen".
+  aimCancel: '#9e9e9e',
   flag: '#e8443a',
   flagPole: '#f4efe1',
 } as const;
@@ -37,4 +43,8 @@ export const READABLE_STROKES: readonly Readonly<{
   { name: 'ball', fill: COLORS.ball, outline: COLORS.ballOutline },
   { name: 'flag', fill: COLORS.flag, outline: COLORS.aimOutline },
   { name: 'flagPole', fill: COLORS.flagPole, outline: COLORS.aimOutline },
+  { name: 'powerLow', fill: COLORS.powerLow, outline: COLORS.aimOutline },
+  { name: 'powerMid', fill: COLORS.powerMid, outline: COLORS.aimOutline },
+  { name: 'powerHigh', fill: COLORS.powerHigh, outline: COLORS.aimOutline },
+  { name: 'aimCancel', fill: COLORS.aimCancel, outline: COLORS.aimOutline },
 ];

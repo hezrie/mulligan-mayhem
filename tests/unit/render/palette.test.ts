@@ -51,6 +51,10 @@ describe('READABLE_STROKES', () => {
       { name: 'ball', fill: '#ffffff', outline: '#2b2b2b' },
       { name: 'flag', fill: '#e8443a', outline: '#1a1a1a' },
       { name: 'flagPole', fill: '#f4efe1', outline: '#1a1a1a' },
+      { name: 'powerLow', fill: '#4caf50', outline: '#1a1a1a' },
+      { name: 'powerMid', fill: '#ffe066', outline: '#1a1a1a' },
+      { name: 'powerHigh', fill: '#ff4d4d', outline: '#1a1a1a' },
+      { name: 'aimCancel', fill: '#9e9e9e', outline: '#1a1a1a' },
     ]);
   });
 });
