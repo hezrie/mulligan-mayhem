@@ -19,7 +19,21 @@ export interface MulliganTestApi {
   getBallClientPosition(): Vec2;
   /** A detached JSON copy of what the renderer's effects are showing; `{}` until wired. */
   getFx(): FxSnapshot;
+  /** A detached copy of every audio cue fired since the last clear or loadHole; `[]` until wired. */
+  getCueLog(): CueEntry[];
+  clearCueLog(): void;
+  /** The audio engine's debug state; `{ engine: 'absent' }` until wired. */
+  getAudioState(): AudioDebugState;
 }
+
+/** One fired sound cue, tagged with the simulation step it fired on. */
+export interface CueEntry {
+  readonly channel: string;
+  readonly cue: string;
+  readonly step: number;
+}
+
+export type AudioDebugState = Readonly<Record<string, string | number | boolean>>;
 
 /**
  * Renderer effects state, one top-level field per effect. Kept generic because src/testing may
