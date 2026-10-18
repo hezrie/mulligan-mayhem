@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { TERRAIN_KINDS } from '../../../src/core/physics/terrain.ts';
 import { contrastRatio, relativeLuminance } from '../../../src/render/contrast.ts';
-import { READABLE_STROKES, TERRAIN_COLORS } from '../../../src/render/palette.ts';
+import { COLORS, READABLE_STROKES, TERRAIN_COLORS } from '../../../src/render/palette.ts';
 
 describe('relativeLuminance', () => {
   it('is 0 for black and 1 for white', () => {
@@ -52,4 +52,12 @@ describe('readability guardrail', () => {
     );
     expect(best).toBeGreaterThanOrEqual(3);
   });
+
+  it.each(['powerLow', 'powerMid', 'powerHigh', 'aimCancel'])(
+    'covers the %s slingshot colour with the aim outline',
+    (name) => {
+      const stroke = READABLE_STROKES.find((s) => s.name === name);
+      expect(stroke?.outline).toBe(COLORS.aimOutline);
+    },
+  );
 });
