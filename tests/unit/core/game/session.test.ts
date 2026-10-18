@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { GameSession } from '../../../../src/core/game/session.ts';
+import { getHole } from '../../../../src/core/course/holes/index.ts';
+import { GameSession, MAX_PENDING_EVENTS } from '../../../../src/core/game/session.ts';
 import { hashState } from '../../../../src/core/hash.ts';
 import { makeHole } from '../../../helpers/holes.ts';
 
@@ -50,5 +51,71 @@ describe('GameSession', () => {
       return hashState(s.state);
     };
     expect(play()).toBe(play());
+  });
+
+  describe('drainEvents', () => {
+    const skeleton = (): GameSession => new GameSession(getHole('skeleton-01'), 1);
+    const BOUNCE_SHOT = { angle: -1.4, power: 0.7 };
+    const ACE_SHOT = { angle: -2.481, power: 0.925 };
+
+    it('returns every event from runUntilRest in order, then empties', () => {
+      const session = skeleton();
+      session.shoot(BOUNCE_SHOT);
+      session.runUntilRest();
+      const events = session.drainEvents();
+      expect(events).toHaveLength(2);
+      const [bounce, rest] = events;
+      expect(bounce?.type).toBe('bounce');
+      expect(bounce?.type === 'bounce' ? bounce.impulse : NaN).toBeCloseTo(748.5476, 3);
+      expect(rest).toEqual({ type: 'rest', forced: false });
+      expect(session.drainEvents()).toEqual([]);
+    });
+
+    it('advance returns its events and also buffers them', () => {
+      const session = skeleton();
+      session.shoot(ACE_SHOT);
+      const events = session.advance(200);
+      expect(events).toHaveLength(3);
+      const [bounce, cup, holed] = events;
+      expect(bounce?.type).toBe('bounce');
+      expect(bounce?.type === 'bounce' ? bounce.impulse : NaN).toBeCloseTo(817.2657, 3);
+      expect(cup).toEqual({ type: 'cup' });
+      expect(holed).toEqual({ type: 'holed', strokes: 1 });
+      expect(session.drainEvents()).toEqual(events);
+    });
+
+    it('keeps runUntilRest step counts unchanged', () => {
+      const a = skeleton();
+      a.shoot(BOUNCE_SHOT);
+      expect(a.runUntilRest()).toBe(158);
+      const b = skeleton();
+      b.shoot(ACE_SHOT);
+      expect(b.runUntilRest()).toBe(151);
+    });
+
+    it('is emptied by reset() and load()', () => {
+      const session = skeleton();
+      session.shoot(BOUNCE_SHOT);
+      session.runUntilRest();
+      session.reset();
+      expect(session.drainEvents()).toEqual([]);
+
+      session.shoot(BOUNCE_SHOT);
+      session.runUntilRest();
+      session.load(getHole('skeleton-01'), 1);
+      expect(session.drainEvents()).toEqual([]);
+    });
+
+    it('holds at most MAX_PENDING_EVENTS, dropping the oldest', () => {
+      expect(MAX_PENDING_EVENTS).toBe(1024);
+      const session = skeleton();
+      for (let i = 0; i < 1100; i++) {
+        session.shoot({ angle: i % 2 === 0 ? 0 : Math.PI, power: 0.05 });
+        session.runUntilRest();
+      }
+      const events = session.drainEvents();
+      expect(events.length).toBe(1024);
+      expect(events.every((e) => e.type === 'rest' && !e.forced)).toBe(true);
+    });
   });
 });
