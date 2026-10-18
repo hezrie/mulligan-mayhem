@@ -16,8 +16,8 @@
     "reviewer": 30,
     "digest": 30
   },
-  "workerCron": "0 * * * *",
-  "maxModeCron": "15,30,45 * * * *",
+  "workerCron": "7 * * * *",
+  "maxModeCron": "22,37,52 * * * *",
   "maxMode": {
     "wipLimit": 3,
     "maxTicketsStartedPerDay": 40
