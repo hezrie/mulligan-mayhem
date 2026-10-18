@@ -10,7 +10,7 @@ name: Agent Worker
 
 on:
   schedule:
-    - cron: '0 */2 * * *' # must equal workerCron in agent.config.json (enforced by check:integrity)
+    - cron: '0 * * * *' # must equal workerCron in agent.config.json (enforced by check:integrity)
   workflow_dispatch:
     inputs:
       issue:

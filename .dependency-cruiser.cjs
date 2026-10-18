@@ -14,25 +14,25 @@ module.exports = {
       name: 'input-depends-only-on-core',
       severity: 'error',
       from: { path: '^src/input/' },
-      to: { path: '^src/(render|ui|testing)/|^src/main\\.ts$' },
+      to: { path: '^src/(render|ui|testing|app)/|^src/main\\.ts$' },
     },
     {
       name: 'render-depends-only-on-core',
       severity: 'error',
       from: { path: '^src/render/' },
-      to: { path: '^src/(input|ui|testing)/|^src/main\\.ts$' },
+      to: { path: '^src/(input|ui|testing|app)/|^src/main\\.ts$' },
     },
     {
       name: 'ui-depends-only-on-core',
       severity: 'error',
       from: { path: '^src/ui/' },
-      to: { path: '^src/(input|render|testing)/|^src/main\\.ts$' },
+      to: { path: '^src/(input|render|testing|app)/|^src/main\\.ts$' },
     },
     {
       name: 'testing-depends-only-on-core',
       severity: 'error',
       from: { path: '^src/testing/' },
-      to: { path: '^src/(input|render|ui)/|^src/main\\.ts$' },
+      to: { path: '^src/(input|render|ui|app)/|^src/main\\.ts$' },
     },
     {
       name: 'only-main-loads-testing',
@@ -41,6 +41,14 @@ module.exports = {
         'The test API is wired in by main.ts behind __TEST_API__ so it is tree-shaken from prod.',
       from: { path: '^src/', pathNot: '^src/testing/|^src/main\\.ts$' },
       to: { path: '^src/testing/' },
+    },
+    {
+      name: 'only-main-loads-app',
+      severity: 'error',
+      comment:
+        'src/app is the composition root: it may import core, input, render and ui, and only main.ts boots it.',
+      from: { path: '^src/', pathNot: '^src/app/|^src/main\\.ts$' },
+      to: { path: '^src/app/' },
     },
     {
       name: 'nothing-imports-main',
