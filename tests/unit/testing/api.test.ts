@@ -4,8 +4,9 @@ import { GameSession } from '../../../src/core/game/session.ts';
 import { hashState } from '../../../src/core/hash.ts';
 import { DT } from '../../../src/core/physics/constants.ts';
 import { installTestApi, type TestApiHost } from '../../../src/testing/api.ts';
+import type { FxSnapshot } from '../../../src/testing/types.ts';
 
-function setup() {
+function setup(fxSnapshot?: () => FxSnapshot) {
   const host: TestApiHost = {};
   const session = new GameSession(getHole('skeleton-01'), 1);
   let manual = false;
@@ -16,6 +17,7 @@ function setup() {
       manual = true;
     },
     worldToClient: (p) => ({ x: p.x * 2, y: p.y * 2 }),
+    ...(fxSnapshot ? { fxSnapshot } : {}),
   });
   return { host, api, session, isManual: () => manual };
 }
@@ -71,5 +73,29 @@ describe('window.__MM__ test API', () => {
     expect(() => {
       api.shoot(0, 0.5);
     }).toThrow();
+  });
+
+  it('getFx returns an empty snapshot when no fxSnapshot dep is given', () => {
+    const { api } = setup();
+    expect(api.getFx()).toEqual({});
+  });
+
+  it('getFx returns a detached copy of the fx snapshot', () => {
+    const source = { plunk: { stamp: 'PAR' } };
+    const { api } = setup(() => source);
+    const copy = api.getFx();
+    expect(copy).toEqual({ plunk: { stamp: 'PAR' } });
+    expect(copy).not.toBe(source);
+    (copy as { plunk: { stamp: string } }).plunk.stamp = 'X';
+    expect(api.getFx()).toEqual({ plunk: { stamp: 'PAR' } });
+    expect(source.plunk.stamp).toBe('PAR');
+  });
+
+  it('getFx reads the fxSnapshot dep on every call', () => {
+    let current: FxSnapshot = { a: 1 };
+    const { api } = setup(() => current);
+    expect(api.getFx()).toEqual({ a: 1 });
+    current = { a: 2 };
+    expect(api.getFx()).toEqual({ a: 2 });
   });
 });
