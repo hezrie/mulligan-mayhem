@@ -17,6 +17,11 @@
     "digest": 30
   },
   "workerCron": "0 * * * *",
+  "maxModeCron": "15,30,45 * * * *",
+  "maxMode": {
+    "wipLimit": 3,
+    "maxTicketsStartedPerDay": 40
+  },
   "architectureReviewEveryNMerges": 10,
   "models": {
     "refiner": "sonnet",

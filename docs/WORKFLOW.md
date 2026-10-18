@@ -174,6 +174,18 @@ change level, using the rules in `scripts/agent/digest.ts`:
 - **Raise 2 → 3:** additionally 15 clean S tickets, and 5 of the last 6 M tickets first-pass.
 - **Lower one level:** any revert in 14 days, or needs-human > 40%.
 
+## MAX mode
+
+Repository variable **`AGENT_MAX_MODE`**. Set it to `true` (phone: repo → Settings → Secrets and
+variables → Actions → Variables) and the worker also runs at :15, :30 and :45, with
+`maxMode` limits from `agent.config.json` (currently 3 in flight, 40 started a day). Set it back to
+`false` to return to the hourly pace. It uses your Claude plan much faster; if you hit its usage
+limits, runs fail as infrastructure problems and the circuit breaker pauses the worker.
+
+```bash
+gh variable set AGENT_MAX_MODE --body true -R hezrie/mulligan-mayhem
+```
+
 ## Kill switch
 
 Repository variable **`AGENT_PAUSED`**. Every agent workflow checks it first and exits if it's
