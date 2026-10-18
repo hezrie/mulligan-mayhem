@@ -179,7 +179,10 @@ change level, using the rules in `scripts/agent/digest.ts`:
 Repository variable **`AGENT_MAX_MODE`**. Set it to `true` (phone: repo → Settings → Secrets and
 variables → Actions → Variables) and the worker also runs at :22, :37 and :52 (besides its hourly run at :07), with
 `maxMode` limits from `agent.config.json` (currently 3 in flight, 40 started a day). Set it back to
-`false` to return to the hourly pace. It uses your Claude plan much faster; if you hit its usage
+`false` to return to the hourly pace. In MAX mode the loop doesn't wait for GitHub's schedule (which can run late or skip):
+a worker run that did real work starts the next one, and a closed ticket (a merge freed a slot)
+starts one too. The chain stops by itself when nothing can start, at the daily cap, on an
+infrastructure failure, or when MAX mode or the kill switch is turned off. It uses your Claude plan much faster; if you hit its usage
 limits, runs fail as infrastructure problems and the circuit breaker pauses the worker.
 
 ```bash

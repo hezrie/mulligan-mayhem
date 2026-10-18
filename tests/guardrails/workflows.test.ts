@@ -237,19 +237,39 @@ describe('all workflows', () => {
     }
   });
 
-  it('only the review submit job may write pull requests, and it runs no LLM', () => {
-    const writers = workflows.flatMap(([file, wf]) =>
+  const writersOf = (scope: (name: string) => boolean) =>
+    workflows.flatMap(([file, wf]) =>
       Object.entries(wf.jobs)
         .filter(
           ([, job]) =>
-            typeof job.permissions === 'object' && Object.values(job.permissions).includes('write'),
+            typeof job.permissions === 'object' &&
+            Object.entries(job.permissions).some(([k, v]) => scope(k) && v === 'write'),
         )
         .map(([name, job]) => ({ id: `${file}:${name}`, job })),
     );
+
+  it('only the review submit job may write pull requests, and it runs no LLM', () => {
+    const writers = writersOf((k) => k !== 'actions');
     expect(writers.map((w) => w.id).sort()).toEqual([
       'agent-review.yml:submit',
       'deploy.yml:deploy',
     ]);
     for (const w of writers) expect((w.job.steps ?? []).some(isClaude)).toBe(false);
+  });
+
+  it('only the tiny MAX-mode chaining jobs may start workflow runs, and they run nothing else', () => {
+    const writers = writersOf((k) => k === 'actions');
+    expect(writers.map((w) => w.id).sort()).toEqual([
+      'agent-close.yml:kick-worker',
+      'agent-worker.yml:chain',
+    ]);
+    for (const w of writers) {
+      expect(w.job.permissions).toEqual({ actions: 'write' });
+      expect(w.job.if ?? '').toContain("vars.AGENT_MAX_MODE == 'true'");
+      expect(w.job.if ?? '').toContain("vars.AGENT_PAUSED != 'true'");
+      expect((w.job.steps ?? []).map((st) => st.run?.trim())).toEqual([
+        'gh workflow run agent-worker.yml --repo "$GITHUB_REPOSITORY" --ref main',
+      ]);
+    }
   });
 });
