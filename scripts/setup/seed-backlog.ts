@@ -5,9 +5,14 @@
  * re-running only creates what is missing and resolves "Blocked by" against real numbers.
  *
  *   GITHUB_REPOSITORY=hezrie/mulligan-mayhem npm run setup:backlog
+ *   GITHUB_REPOSITORY=hezrie/mulligan-mayhem npm run setup:backlog -- --file backlog.json
+ *
+ * With --file, the backlog is read from a JSON array of SeedTicket objects (e.g. a planning
+ * session's output), in dependency order.
  *
  * PROTECTED.
  */
+import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { STATUS } from '../agent/labels.ts';
 import {
@@ -24,6 +29,10 @@ export interface SeedTicket extends Omit<TicketSpec, 'dependencies'> {
   readonly ready: boolean;
   /** Keys of earlier seed tickets this one is blocked by. */
   readonly blockedBy: readonly string[];
+  /** Existing GitHub issues this one is blocked by. */
+  readonly blockedByIssues?: readonly number[];
+  /** Extra labels, e.g. `epic:daily-hook` (created if missing). */
+  readonly labels?: readonly string[];
 }
 
 const PALETTE_NOTE =
@@ -328,8 +337,14 @@ export function backlogProblems(backlog: readonly SeedTicket[]): string[] {
     if (seen.has(t.key)) problems.push(`duplicate key ${t.key}`);
     for (const dep of t.blockedBy)
       if (!seen.has(dep)) problems.push(`${t.key}: "${dep}" must be an earlier ticket`);
-    if (t.ready && t.blockedBy.length > 0)
-      problems.push(`${t.key}: a ready ticket can't be blocked`);
+    // A queued ticket may wait on other queued tickets (the picker skips it until they close),
+    // but never on one that isn't queued: it would sit in the queue forever.
+    for (const dep of t.blockedBy) {
+      if (t.ready && backlog.find((b) => b.key === dep)?.ready === false)
+        problems.push(`${t.key}: a ready ticket can only wait on ready tickets, not "${dep}"`);
+    }
+    for (const label of t.labels ?? [])
+      if (!/^epic:[a-z0-9-]+$/.test(label)) problems.push(`${t.key}: unexpected label "${label}"`);
     for (const p of definitionOfReadyProblems(renderSeed(t, () => 1)))
       problems.push(`${t.key}: ${p}`);
     seen.add(t.key);
@@ -338,7 +353,10 @@ export function backlogProblems(backlog: readonly SeedTicket[]): string[] {
 }
 
 export function renderSeed(t: SeedTicket, numberOf: (key: string) => number): string {
-  return renderTicketBody({ ...t, dependencies: t.blockedBy.map(numberOf) });
+  return renderTicketBody({
+    ...t,
+    dependencies: [...new Set([...t.blockedBy.map(numberOf), ...(t.blockedByIssues ?? [])])],
+  });
 }
 
 export function seedLabels(t: SeedTicket): string[] {
@@ -347,6 +365,7 @@ export function seedLabels(t: SeedTicket): string[] {
     `size:${t.size}`,
     `priority:${t.priority}`,
     `type:${t.type}`,
+    ...(t.labels ?? []),
   ];
 }
 
@@ -368,6 +387,18 @@ export async function seedBacklog(
       .filter((i) => i.pull_request === undefined)
       .map((i) => [i.title, i.number]),
   );
+  // Epic labels aren't part of the fixed label set, so create any that are missing.
+  const labelNames = new Set(
+    (await gh.restAll<{ name: string }>(`repos/${repo}/labels?per_page=100`)).map((l) => l.name),
+  );
+  for (const label of new Set(backlog.flatMap((t) => t.labels ?? []))) {
+    if (labelNames.has(label)) continue;
+    await gh.rest('POST', `repos/${repo}/labels`, {
+      name: label,
+      color: '8250df',
+      description: 'Roadmap epic',
+    });
+  }
   const tracker = new GitHubTracker(gh, repo);
   const numbers = new Map<string, number>();
   const numberOf = (key: string): number => {
@@ -393,7 +424,10 @@ export async function seedBacklog(
 
 const invoked = process.argv[1];
 if (invoked && import.meta.url === pathToFileURL(invoked).href) {
-  seedBacklog(execGhClient(), repoFromEnv())
+  const fileFlag = process.argv.indexOf('--file');
+  const file = fileFlag === -1 ? undefined : process.argv[fileFlag + 1];
+  const backlog = file ? (JSON.parse(readFileSync(file, 'utf8')) as SeedTicket[]) : BACKLOG;
+  seedBacklog(execGhClient(), repoFromEnv(), backlog)
     .then((results) => {
       for (const r of results)
         console.log(`${r.created ? 'created' : 'exists '} #${String(r.number)} ${r.key}`);
