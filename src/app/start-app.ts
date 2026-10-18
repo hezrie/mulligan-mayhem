@@ -53,7 +53,7 @@ export function startApp(app: HTMLElement, canvas: HTMLCanvasElement): AppHandle
       events: session.drainEvents(),
     });
     hud.update(session.state, session.course.hole);
-    complete.update(session.state, session.course.hole);
+    complete.update(session.state, session.course.hole, now);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
