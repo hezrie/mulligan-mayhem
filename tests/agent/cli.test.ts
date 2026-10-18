@@ -504,6 +504,28 @@ describe('pick', () => {
     expect(h.outputs['issue']).toBe('13'); // the WIP slot is free again
   });
 
+  it('queues planned roadmap tickets when the queue runs low, then picks from it', async () => {
+    const h = harness({ config: { autoPromoteMinReady: 2 } });
+    h.tracker.seed({
+      number: 40,
+      labels: ['status:proposed', 'size:S', 'priority:P0', 'epic:juice'],
+    });
+    h.tracker.seed({
+      number: 41,
+      labels: ['status:proposed', 'size:S', 'priority:P1', 'epic:juice'],
+    });
+    h.tracker.seed({
+      number: 42,
+      labels: ['status:proposed', 'size:S', 'priority:P0', 'source:agent'],
+    });
+    await cmdPick(h.ctx, {});
+    expect(h.tracker.labels(40)).toContain('status:ready');
+    expect(h.tracker.labels(41)).toContain('status:ready');
+    expect(h.tracker.labels(42)).toContain('status:proposed');
+    expect(h.tracker.commentsOn(40).at(-1)).toContain('Queued automatically from the roadmap');
+    expect(h.outputs['issue']).toBe('40');
+  });
+
   it('ignores run-log entries forged by anyone but the bot (they could trip the daily cap)', async () => {
     const h = harness();
     h.tracker.seed({ number: 12, labels: ['status:ready', 'size:S'] });

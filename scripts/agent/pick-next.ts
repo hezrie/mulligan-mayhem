@@ -15,7 +15,7 @@
  */
 import { pathToFileURL } from 'node:url';
 import type { AgentConfig } from './config.ts';
-import { PLAN, STATUS } from './labels.ts';
+import { PLAN, SOURCE_AGENT, STATUS } from './labels.ts';
 import { REVIEWER_LOGIN } from './merge.ts';
 import { parseRunLog, ticketsStartedOn, type RunLogEntry } from './run-log.ts';
 import { blockers, priorityRank, sizeOf, statusOf } from './tickets.ts';
@@ -147,6 +147,42 @@ function fixCandidate(s: Snapshot): { ticket: Ticket; pr: PullRequest } | null {
     if (ticket && statusOf(ticket.labels) !== STATUS.needsHuman) return { ticket, pr };
   }
   return null;
+}
+
+/** Blockers that are still open, judged by the open tickets in the snapshot. */
+function openBlockersAmongOpenTickets(ticket: Ticket, s: Snapshot): number[] {
+  const open = new Set(s.tickets.map((t) => t.number));
+  return blockers(ticket.body).filter((n) => open.has(n));
+}
+
+/**
+ * The planned tickets to queue now so that at least `minReady` startable tickets wait in the
+ * queue: status:proposed tickets from the roadmap (an epic:* label; never agent proposals,
+ * which aren't refined yet) whose blockers are all closed, by priority, then oldest first.
+ */
+export function promotionCandidates(s: Snapshot, minReady: number): Ticket[] {
+  if (minReady <= 0) return [];
+  const startable = s.tickets.filter(
+    (t) => statusOf(t.labels) === STATUS.ready && openBlockersAmongOpenTickets(t, s).length === 0,
+  ).length;
+  if (startable >= minReady) return [];
+  return s.tickets
+    .filter(
+      (t) =>
+        t.state === 'open' &&
+        statusOf(t.labels) === STATUS.proposed &&
+        t.labels.some((l) => l.startsWith('epic:')) &&
+        !t.labels.includes(SOURCE_AGENT) &&
+        sizeOf(t.labels) !== null &&
+        openBlockersAmongOpenTickets(t, s).length === 0,
+    )
+    .sort(
+      (a, b) =>
+        priorityRank(a.labels) - priorityRank(b.labels) ||
+        a.createdAt.localeCompare(b.createdAt) ||
+        a.number - b.number,
+    )
+    .slice(0, minReady - startable);
 }
 
 /** Why a ticket can't be started right now, or null if it can. */
