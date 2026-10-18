@@ -19,6 +19,8 @@ export const COLORS = {
   aimWeak: '#ffe066',
   aimStrong: '#ff4d4d',
   aimOutline: '#1a1a1a',
+  flag: '#e8443a',
+  flagPole: '#f4efe1',
 } as const;
 
 /**
@@ -33,4 +35,6 @@ export const READABLE_STROKES: readonly Readonly<{
   { name: 'aimWeak', fill: COLORS.aimWeak, outline: COLORS.aimOutline },
   { name: 'aimStrong', fill: COLORS.aimStrong, outline: COLORS.aimOutline },
   { name: 'ball', fill: COLORS.ball, outline: COLORS.ballOutline },
+  { name: 'flag', fill: COLORS.flag, outline: COLORS.aimOutline },
+  { name: 'flagPole', fill: COLORS.flagPole, outline: COLORS.aimOutline },
 ];
