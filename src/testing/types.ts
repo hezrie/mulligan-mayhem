@@ -17,7 +17,15 @@ export interface MulliganTestApi {
   getStateHash(): string;
   /** Where the ball is on screen, in client pixels (for real pointer-input tests). */
   getBallClientPosition(): Vec2;
+  /** A detached JSON copy of what the renderer's effects are showing; `{}` until wired. */
+  getFx(): FxSnapshot;
 }
+
+/**
+ * Renderer effects state, one top-level field per effect. Kept generic because src/testing may
+ * import only core; specs cast the values to local interfaces.
+ */
+export type FxSnapshot = Readonly<Record<string, unknown>>;
 
 declare global {
   interface Window {

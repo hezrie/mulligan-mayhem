@@ -3,7 +3,7 @@ import type { GameSession } from '../core/game/session.ts';
 import { hashState } from '../core/hash.ts';
 import type { Vec2 } from '../core/math/vec2.ts';
 import { DT } from '../core/physics/constants.ts';
-import type { MulliganTestApi } from './types.ts';
+import type { FxSnapshot, MulliganTestApi } from './types.ts';
 
 export interface TestApiDeps {
   readonly session: GameSession;
@@ -11,6 +11,8 @@ export interface TestApiDeps {
   /** Stops the real-time loop from stepping the simulation. */
   useManualClock(): void;
   worldToClient(p: Vec2): Vec2;
+  /** The renderer's current effects state; read fresh on every getFx() call. */
+  fxSnapshot?: () => FxSnapshot;
 }
 
 /** Anything that can hold the API: `window` in the browser, a plain object in unit tests. */
@@ -39,6 +41,7 @@ export function installTestApi(host: TestApiHost, deps: TestApiDeps): MulliganTe
     getState: () => structuredClone(session.state),
     getStateHash: () => hashState(session.state),
     getBallClientPosition: () => deps.worldToClient(session.state.ball.pos),
+    getFx: () => structuredClone(deps.fxSnapshot?.() ?? {}),
   };
   host.__MM__ = api;
   return api;
