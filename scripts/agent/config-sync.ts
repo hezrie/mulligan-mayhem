@@ -49,16 +49,24 @@ export function checkConfigSync(root: string): string[] {
 
   const config = JSON.parse(read('agent.config.json')) as {
     workerCron: string;
+    maxModeCron: string;
     workflowTimeoutMinutes: Record<string, number>;
   };
   const workerPath = '.github/workflows/agent-worker.yml';
   if (!existsSync(join(root, workerPath))) {
     problems.push(`${workerPath} is missing`);
   } else {
-    const crons = workflowCrons(read(workerPath));
-    if (crons.length !== 1 || crons[0] !== config.workerCron) {
+    const yaml = read(workerPath);
+    const crons = workflowCrons(yaml);
+    const want = [config.workerCron, config.maxModeCron];
+    if (crons.join(' | ') !== want.join(' | ')) {
       problems.push(
-        `${workerPath} cron [${crons.join(', ')}] must equal agent.config.json workerCron "${config.workerCron}"`,
+        `${workerPath} cron [${crons.join(', ')}] must equal agent.config.json [workerCron, maxModeCron] [${want.join(', ')}]`,
+      );
+    }
+    if (!yaml.includes(`github.event.schedule != '${config.maxModeCron}'`)) {
+      problems.push(
+        `${workerPath} pick job must skip the maxModeCron schedule unless AGENT_MAX_MODE is on`,
       );
     }
   }

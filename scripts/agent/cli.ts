@@ -415,14 +415,14 @@ export async function cmdPick(ctx: Ctx, args: Args): Promise<void> {
     snapshot = await loadSnapshot(ctx.tracker, META.runLog, trustedAuthors(ctx));
   }
   const requested = optionalInt(args, 'issue');
-  const pick = requested
-    ? pickSpecific(snapshot, requested)
-    : pickNext(snapshot, ctx.config, ctx.now);
+  const maxMode = ctx.env['AGENT_MAX_MODE'] === 'true';
+  const limits = maxMode ? { ...ctx.config, ...ctx.config.maxMode } : ctx.config;
+  const pick = requested ? pickSpecific(snapshot, requested) : pickNext(snapshot, limits, ctx.now);
   ctx.output('issue', pick.issue === null ? '' : String(pick.issue));
   ctx.output('mode', pick.mode ?? '');
   ctx.output('pr', pick.pr === null ? '' : String(pick.pr));
   ctx.summary(
-    `### 🎯 Picker\n${pick.issue === null ? 'Nothing to do' : `#${String(pick.issue)} → **${pick.mode}**`}: ${pick.reason}`,
+    `### 🎯 Picker${maxMode ? ' (MAX mode)' : ''}\n${pick.issue === null ? 'Nothing to do' : `#${String(pick.issue)} → **${pick.mode}**`}: ${pick.reason}`,
   );
 }
 

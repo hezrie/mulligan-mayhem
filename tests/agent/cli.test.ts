@@ -504,6 +504,22 @@ describe('pick', () => {
     expect(h.outputs['issue']).toBe('13'); // the WIP slot is free again
   });
 
+  it('uses the MAX mode limits while AGENT_MAX_MODE is true', async () => {
+    const ticketsAt = (env: Record<string, string>) => {
+      const h = harness({ env, config: { wipLimit: 1, autoPromoteMinReady: 0 } });
+      h.tracker.seed({ number: 12, labels: ['status:in-review', 'size:S'] });
+      h.tracker.seed({ number: 13, labels: ['status:ready', 'size:S'] });
+      h.tracker.prs = [openPr(30, 'agent/12-x')];
+      return h;
+    };
+    const normal = ticketsAt({});
+    await cmdPick(normal.ctx, {});
+    expect(normal.outputs['issue']).toBe(''); // WIP limit 1 reached
+    const max = ticketsAt({ AGENT_MAX_MODE: 'true' });
+    await cmdPick(max.ctx, {});
+    expect(max.outputs['issue']).toBe('13'); // maxMode.wipLimit is 3
+  });
+
   it('queues planned roadmap tickets when the queue runs low, then picks from it', async () => {
     const h = harness({ config: { autoPromoteMinReady: 2 } });
     h.tracker.seed({

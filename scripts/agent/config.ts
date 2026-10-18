@@ -24,6 +24,10 @@ export const AgentConfigSchema = z.strictObject({
   maxAgentProposedTicketsPerDay: z.int().min(0),
   maxTurns: PerRole(z.int().min(1)),
   workerCron: z.string().regex(/^(\S+\s+){4}\S+$/, 'five-field cron expression'),
+  /** Extra worker runs that only act while the repo variable AGENT_MAX_MODE is 'true'. */
+  maxModeCron: z.string().regex(/^(\S+\s+){4}\S+$/, 'five-field cron expression'),
+  /** Limits that replace wipLimit / maxTicketsStartedPerDay while MAX mode is on. */
+  maxMode: z.strictObject({ wipLimit: z.int().min(1), maxTicketsStartedPerDay: z.int().min(1) }),
   architectureReviewEveryNMerges: z.int().min(1),
   models: PerRole(z.string().min(1)),
   workflowTimeoutMinutes: PerRole(z.int().min(1)),

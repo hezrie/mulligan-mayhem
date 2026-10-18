@@ -11,6 +11,7 @@ name: Agent Worker
 on:
   schedule:
     - cron: '0 * * * *' # must equal workerCron in agent.config.json (enforced by check:integrity)
+    - cron: '15,30,45 * * * *' # maxModeCron: these runs only act while vars.AGENT_MAX_MODE is 'true'
   workflow_dispatch:
     inputs:
       issue:
@@ -27,7 +28,10 @@ concurrency:
 
 jobs:
   pick:
-    if: vars.AGENT_PAUSED != 'true'
+    # MAX mode (repo variable AGENT_MAX_MODE=true) adds the quarter-hour runs.
+    if: >-
+      vars.AGENT_PAUSED != 'true' &&
+      (github.event.schedule != '15,30,45 * * * *' || vars.AGENT_MAX_MODE == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -71,6 +75,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          AGENT_MAX_MODE: ${{ vars.AGENT_MAX_MODE }}
           ISSUE: ${{ inputs.issue }}
         run: npx tsx scripts/agent/cli.ts pick --issue "${ISSUE:-0}"
 
