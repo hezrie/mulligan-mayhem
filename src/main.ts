@@ -16,6 +16,7 @@ if (__TEST_API__) {
       getHole,
       useManualClock: app.useManualClock,
       worldToClient: (p) => app.renderer.worldToClient(p),
+      fxSnapshot: () => app.renderer.fxSnapshot(),
     }),
   );
 }

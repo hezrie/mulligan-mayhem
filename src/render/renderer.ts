@@ -3,17 +3,26 @@ import type { GameState } from '../core/game/state.ts';
 import type { Shot } from '../core/game/shot.ts';
 import type { Vec2 } from '../core/math/vec2.ts';
 import { BALL_RADIUS } from '../core/physics/constants.ts';
+import { countEvents, ZERO_COUNTS, type EventCounts, type FrameInput } from './fx-frame.ts';
 import { COLORS, TERRAIN_COLORS } from './palette.ts';
 import { fitView, screenToWorld, worldToScreen, type View } from './view.ts';
 
 const PADDING = 16;
 const WALL_WIDTH = 4;
 
+/** Plain data (structuredClone-safe) so the test API can hand it out as an FxSnapshot. */
+export type RendererFxSnapshot = Readonly<{
+  clock: Readonly<{ nowMs: number }>;
+  /** Events seen since page load. */
+  events: EventCounts;
+}>;
+
 export interface Renderer {
   /** Draws one frame. Reads state; never mutates it. */
-  draw(course: Course, state: Readonly<GameState>, aim: Shot | null): void;
+  draw(course: Course, state: Readonly<GameState>, aim: Shot | null, frame: FrameInput): void;
   clientToWorld(clientX: number, clientY: number): Vec2;
   worldToClient(p: Vec2): Vec2;
+  fxSnapshot(): RendererFxSnapshot;
 }
 
 function tracePolygon(ctx: CanvasRenderingContext2D, points: readonly Vec2[]): void {
@@ -46,6 +55,8 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
   let cssHeight = 1;
   let dpr = 1;
   let view: View = { scale: 1, offsetX: 0, offsetY: 0 };
+  let nowMs = 0;
+  let eventCounts = ZERO_COUNTS;
 
   // Keep the backing store matched to the canvas's CSS size × device pixel ratio, so drawing is
   // crisp and the view fits what's on screen. A ResizeObserver catches every layout change
@@ -62,7 +73,9 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
   new ResizeObserver(resize).observe(canvas);
 
   return {
-    draw(course, state, aim) {
+    draw(course, state, aim, frame) {
+      nowMs = frame.nowMs;
+      eventCounts = countEvents(eventCounts, frame.events);
       if ((window.devicePixelRatio || 1) !== dpr) resize();
       const { hole } = course;
       view = fitView(cssWidth, cssHeight, hole.size, PADDING);
@@ -128,5 +141,6 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
       const s = worldToScreen(view, p);
       return { x: s.x + rect.left, y: s.y + rect.top };
     },
+    fxSnapshot: () => ({ clock: { nowMs }, events: eventCounts }),
   };
 }
