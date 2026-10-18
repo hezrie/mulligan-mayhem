@@ -3,6 +3,7 @@ import type { GameState } from '../core/game/state.ts';
 import type { Shot } from '../core/game/shot.ts';
 import type { Vec2 } from '../core/math/vec2.ts';
 import { BALL_RADIUS } from '../core/physics/constants.ts';
+import { aimStrokeStyles } from './aim.ts';
 import { countEvents, ZERO_COUNTS, type EventCounts, type FrameInput } from './fx-frame.ts';
 import { COLORS, TERRAIN_COLORS } from './palette.ts';
 import { fitView, screenToWorld, worldToScreen, type View } from './view.ts';
@@ -38,13 +39,15 @@ function drawAim(ctx: CanvasRenderingContext2D, from: Vec2, aim: Shot): void {
   const len = 30 + aim.power * 130;
   const dx = Math.cos(aim.angle);
   const dy = Math.sin(aim.angle);
-  ctx.strokeStyle = aim.power > 0.66 ? COLORS.aimStrong : COLORS.aimWeak;
-  ctx.lineWidth = 2 + aim.power * 3;
   ctx.setLineDash([6, 6]);
   ctx.beginPath();
   ctx.moveTo(from.x, from.y);
   ctx.lineTo(from.x + dx * len, from.y + dy * len);
-  ctx.stroke();
+  for (const style of aimStrokeStyles(aim.power)) {
+    ctx.strokeStyle = style.color;
+    ctx.lineWidth = style.width;
+    ctx.stroke();
+  }
   ctx.setLineDash([]);
 }
 

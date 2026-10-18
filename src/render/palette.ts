@@ -18,4 +18,19 @@ export const COLORS = {
   ballOutline: '#2b2b2b',
   aimWeak: '#ffe066',
   aimStrong: '#ff4d4d',
+  aimOutline: '#1a1a1a',
 } as const;
+
+/**
+ * Strokes that must stay readable on every terrain: either the fill or the outline needs at least
+ * 3:1 contrast against each TERRAIN_COLORS entry (guarded by tests/unit/render/contrast.test.ts).
+ */
+export const READABLE_STROKES: readonly Readonly<{
+  name: string;
+  fill: string;
+  outline: string;
+}>[] = [
+  { name: 'aimWeak', fill: COLORS.aimWeak, outline: COLORS.aimOutline },
+  { name: 'aimStrong', fill: COLORS.aimStrong, outline: COLORS.aimOutline },
+  { name: 'ball', fill: COLORS.ball, outline: COLORS.ballOutline },
+];
