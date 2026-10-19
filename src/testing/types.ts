@@ -15,6 +15,8 @@ export interface MulliganTestApi {
   fastForward(duration: number | 'untilRest'): number;
   getState(): GameState;
   getStateHash(): string;
+  /** `hashHole(generateHole(seed, index))`, to compare the Daily generator with Node. */
+  getGeneratedHoleHash(seed: number, index: number): string;
   /** Where the ball is on screen, in client pixels (for real pointer-input tests). */
   getBallClientPosition(): Vec2;
   /** A detached JSON copy of what the renderer's effects are showing; `{}` until wired. */

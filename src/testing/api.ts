@@ -1,8 +1,9 @@
+import { generateHole } from '../core/course/generator.ts';
 import type { Hole } from '../core/course/schema.ts';
 import type { GameEvent } from '../core/game/machine.ts';
 import { isResolvingShot, type GameSession } from '../core/game/session.ts';
 import type { Shot } from '../core/game/shot.ts';
-import { hashState } from '../core/hash.ts';
+import { hashHole, hashState } from '../core/hash.ts';
 import type { Vec2 } from '../core/math/vec2.ts';
 import { DT, HAZARD_PAUSE_STEPS, MAX_ROLL_STEPS } from '../core/physics/constants.ts';
 import type { AudioDebugState, CueEntry, FxSnapshot, MulliganTestApi } from './types.ts';
@@ -65,6 +66,7 @@ export function installTestApi(host: TestApiHost, deps: TestApiDeps): MulliganTe
     },
     getState: () => structuredClone(session.state),
     getStateHash: () => hashState(session.state),
+    getGeneratedHoleHash: (seed, index) => hashHole(generateHole(seed, index)),
     getBallClientPosition: () => deps.worldToClient(session.state.ball.pos),
     getFx: () => structuredClone(deps.fxSnapshot?.() ?? {}),
     getCueLog: () => structuredClone([...(deps.audio?.cueLog.entries() ?? [])]),

@@ -1,12 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { generateHole } from '../../../src/core/course/generator.ts';
 import { getHole } from '../../../src/core/course/holes/index.ts';
 import { ShotRejectedError, type GameEvent } from '../../../src/core/game/machine.ts';
 import { ReplayFileSchema, type ReplayFile } from '../../../src/core/game/replay.ts';
 import { GameSession } from '../../../src/core/game/session.ts';
 import type { Shot } from '../../../src/core/game/shot.ts';
-import { hashState } from '../../../src/core/hash.ts';
+import { hashHole, hashState } from '../../../src/core/hash.ts';
 import { DT } from '../../../src/core/physics/constants.ts';
 import { installTestApi, type TestApiDeps, type TestApiHost } from '../../../src/testing/api.ts';
 import type { CueEntry, FxSnapshot } from '../../../src/testing/types.ts';
@@ -267,5 +268,11 @@ describe('window.__MM__ test API: audio', () => {
     expect(api.getCueLog()).toEqual([]);
     api.clearCueLog();
     expect(api.getAudioState()).toEqual({ engine: 'absent' });
+  });
+
+  it('getGeneratedHoleHash equals hashHole(generateHole(seed, index))', () => {
+    const { api } = setup();
+    expect(api.getGeneratedHoleHash(12345, 0)).toBe(hashHole(generateHole(12345, 0)));
+    expect(api.getGeneratedHoleHash(7, 8)).toBe(hashHole(generateHole(7, 8)));
   });
 });

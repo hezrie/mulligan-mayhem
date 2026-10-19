@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { fnv1a64, hashValues } from '../../../src/core/hash.ts';
+import { getHole } from '../../../src/core/course/holes/index.ts';
+import type { Hole } from '../../../src/core/course/schema.ts';
+import { fnv1a64, hashHole, hashValues } from '../../../src/core/hash.ts';
 
 const bytes = (s: string): Uint8Array => new TextEncoder().encode(s);
 
@@ -32,5 +34,38 @@ describe('hashValues', () => {
 
   it('returns 16 lowercase hex digits', () => {
     expect(hashValues(['x', 42])).toMatch(/^[0-9a-f]{16}$/);
+  });
+});
+
+describe('hashHole', () => {
+  const base = getHole('skeleton-01');
+  const triangle = [
+    { x: 0, y: 0 },
+    { x: 10, y: 0 },
+    { x: 10, y: 10 },
+  ];
+  const variants: [string, Hole][] = [
+    ['id', { ...base, id: 'other' }],
+    ['name', { ...base, name: 'Other' }],
+    ['par', { ...base, par: base.par + 1 }],
+    ['size', { ...base, size: { ...base.size, width: base.size.width + 1 } }],
+    ['boundary', { ...base, boundary: base.boundary.slice(1) }],
+    ['walls', { ...base, walls: [] }],
+    ['tee', { ...base, tee: { ...base.tee, x: base.tee.x + 1 } }],
+    ['cup', { ...base, cup: { ...base.cup, y: base.cup.y + 1 } }],
+    ['cup radius', { ...base, cup: { ...base.cup, radius: 12 } }],
+    ['terrain base', { ...base, terrain: { ...base.terrain, base: 'rough' } }],
+    [
+      'terrain zones',
+      { ...base, terrain: { base: 'fairway', zones: [{ kind: 'sand', polygon: triangle }] } },
+    ],
+  ];
+
+  it('is stable for equal holes and changes when any field changes', () => {
+    expect(hashHole(structuredClone(base))).toBe(hashHole(base));
+    for (const [field, hole] of variants) {
+      expect(hashHole(hole), field).not.toBe(hashHole(base));
+    }
+    expect(new Set(variants.map(([, h]) => hashHole(h))).size).toBe(variants.length);
   });
 });
