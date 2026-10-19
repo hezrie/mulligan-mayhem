@@ -134,3 +134,62 @@ describe('createAudioEngine play and state', () => {
     expect(engine.play(voiceFor('cup', {}))).toBe(false);
   });
 });
+
+function setupVisibility(init: (ctx: FakeAudioContext) => void = () => undefined) {
+  const base = setup(init);
+  const source = Object.assign(new EventTarget(), { hidden: false });
+  base.engine.attachVisibility(source);
+  const setHidden = (hidden: boolean) => {
+    source.hidden = hidden;
+    source.dispatchEvent(new Event('visibilitychange'));
+  };
+  return { ...base, source, setHidden };
+}
+
+describe('createAudioEngine visibility', () => {
+  it('suspends once when hidden and resumes once when shown', () => {
+    const { ctx, engine, fire, setHidden } = setupVisibility();
+    fire('pointerdown');
+    setHidden(true);
+    expect(engine.state()).toBe('suspended');
+    expect(ctx.suspendCalls).toBe(1);
+    expect(ctx.resumeCalls).toBe(0);
+    setHidden(false);
+    expect(engine.state()).toBe('running');
+    expect(ctx.resumeCalls).toBe(1);
+    expect(ctx.suspendCalls).toBe(1);
+  });
+
+  it('creates no context and stays locked when visibility changes before unlock', () => {
+    const { engine, createContext, setHidden } = setupVisibility();
+    setHidden(true);
+    expect(engine.state()).toBe('locked');
+    setHidden(false);
+    expect(engine.state()).toBe('locked');
+    expect(createContext).toHaveBeenCalledTimes(0);
+  });
+
+  it('does not resume on pointer events while hidden', () => {
+    const { ctx, fire, setHidden } = setupVisibility();
+    fire('pointerdown');
+    setHidden(true);
+    expect(ctx.state).toBe('suspended');
+    fire('pointerdown');
+    fire('pointerup');
+    expect(ctx.resumeCalls).toBe(0);
+  });
+
+  it('swallows a rejected suspend without throwing or logging', async () => {
+    const { ctx, engine, fire, setHidden } = setupVisibility((c) => {
+      c.failSuspend = true;
+    });
+    fire('pointerdown');
+    expect(() => {
+      setHidden(true);
+    }).not.toThrow();
+    expect(ctx.suspendCalls).toBe(1);
+    expect(engine.state()).toBe('suspended');
+    // Let the rejection settle so an unhandled rejection would fail this run.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+});

@@ -9,7 +9,14 @@ const SFX_BUS_GAIN = 1.0;
 // Capture phase so a handler that stops propagation can't keep the audio locked.
 const LISTENER_OPTIONS = { capture: true } as const;
 
-export type AudioEngineState = 'locked' | 'running' | 'unavailable';
+export type AudioEngineState = 'locked' | 'running' | 'suspended' | 'unavailable';
+
+export type ListenerTarget = Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
+
+/** `document` in the browser; the engine reads only `hidden`. */
+export interface VisibilitySource extends ListenerTarget {
+  readonly hidden: boolean;
+}
 
 export interface AudioEngineOptions {
   /** Builds the context. Called at most once, lazily inside a gesture, so browsers allow sound. */
@@ -19,7 +26,9 @@ export interface AudioEngineOptions {
 export interface AudioEngine {
   unlock(): void;
   /** Unlocks on the first pointerdown and retries `resume()` on later gestures. Returns detach. */
-  attachUnlock(target: EventTarget): () => void;
+  attachUnlock(target: ListenerTarget): () => void;
+  /** Suspends the context while the tab is hidden and resumes it when shown. Returns detach. */
+  attachVisibility(source: VisibilitySource): () => void;
   play(voice: Voice, options?: { readonly at?: number }): boolean;
   now(): number;
   state(): AudioEngineState;
@@ -33,9 +42,12 @@ interface Graph {
 export function createAudioEngine({ createContext }: AudioEngineOptions): AudioEngine {
   let graph: Graph | undefined;
   let unavailable = false;
+  let hidden = false;
 
   // Rejections are swallowed: a failed resume just means silence, and a console error fails e2e.
+  // A gesture must not wake the context while the tab is hidden.
   const resumeIfSuspended = (): void => {
+    if (hidden) return;
     if (graph?.ctx.state === 'suspended') graph.ctx.resume().catch(() => undefined);
   };
 
@@ -72,6 +84,18 @@ export function createAudioEngine({ createContext }: AudioEngineOptions): AudioE
         target.removeEventListener('pointerup', resumeIfSuspended, LISTENER_OPTIONS);
       };
     },
+    attachVisibility(source) {
+      const onChange = (): void => {
+        hidden = source.hidden;
+        if (graph === undefined) return;
+        const settled = hidden ? graph.ctx.suspend() : graph.ctx.resume();
+        settled.catch(() => undefined);
+      };
+      source.addEventListener('visibilitychange', onChange);
+      return () => {
+        source.removeEventListener('visibilitychange', onChange);
+      };
+    },
     play(voice, options = {}) {
       if (graph === undefined) return false;
       playVoice(graph.ctx, graph.sfx, voice, options.at ?? graph.ctx.currentTime);
@@ -80,7 +104,8 @@ export function createAudioEngine({ createContext }: AudioEngineOptions): AudioE
     now: () => graph?.ctx.currentTime ?? 0,
     state() {
       if (unavailable) return 'unavailable';
-      return graph === undefined ? 'locked' : 'running';
+      if (graph === undefined) return 'locked';
+      return hidden ? 'suspended' : 'running';
     },
   };
 }
