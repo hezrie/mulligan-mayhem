@@ -1,4 +1,4 @@
-import type { Hole } from '../core/course/schema.ts';
+import { parseHole, type Hole } from '../core/course/schema.ts';
 import type { GameEvent } from '../core/game/machine.ts';
 import { isResolvingShot, type GameSession } from '../core/game/session.ts';
 import type { Shot } from '../core/game/shot.ts';
@@ -44,6 +44,13 @@ export function installTestApi(host: TestApiHost, deps: TestApiDeps): MulliganTe
       session.load(deps.getHole(id), seed);
       deps.audio?.cueLog.clear();
     },
+    loadHoleData(data, seed = 1) {
+      // Validate first so a rejected hole leaves the clock and the session untouched.
+      const hole = parseHole(data);
+      deps.useManualClock();
+      session.load(hole, seed);
+      deps.audio?.cueLog.clear();
+    },
     shoot(angle, power) {
       const shot = { angle, power };
       session.shoot(shot);
@@ -66,6 +73,7 @@ export function installTestApi(host: TestApiHost, deps: TestApiDeps): MulliganTe
     getState: () => structuredClone(session.state),
     getStateHash: () => hashState(session.state),
     getBallClientPosition: () => deps.worldToClient(session.state.ball.pos),
+    worldToClient: (p) => deps.worldToClient(p),
     getFx: () => structuredClone(deps.fxSnapshot?.() ?? {}),
     getCueLog: () => structuredClone([...(deps.audio?.cueLog.entries() ?? [])]),
     clearCueLog: () => deps.audio?.cueLog.clear(),

@@ -9,6 +9,11 @@ export interface MulliganTestApi {
   readonly ready: true;
   /** Loads a hole and switches to a manual clock, so only fastForward advances time. */
   loadHole(id: string, seed?: number): void;
+  /**
+   * Like loadHole, for hole JSON that isn't registered (fixtures, generated or player-made holes).
+   * Throws HoleValidationError, changing nothing, if the data isn't a valid hole.
+   */
+  loadHoleData(data: unknown, seed?: number): void;
   /** Takes a shot exactly like a player would. Throws unless the phase is 'aiming'. */
   shoot(angle: number, power: number): void;
   /** Runs fixed steps synchronously: a duration in ms, or until the ball stops. Returns steps run. */
@@ -17,6 +22,8 @@ export interface MulliganTestApi {
   getStateHash(): string;
   /** Where the ball is on screen, in client pixels (for real pointer-input tests). */
   getBallClientPosition(): Vec2;
+  /** Where a world point is on screen, in client pixels (for pixel sampling in e2e specs). */
+  worldToClient(p: Vec2): Vec2;
   /** A detached JSON copy of what the renderer's effects are showing; `{}` until wired. */
   getFx(): FxSnapshot;
   /** A detached copy of every audio cue fired since the last clear or loadHole; `[]` until wired. */

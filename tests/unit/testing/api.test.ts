@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { getHole } from '../../../src/core/course/holes/index.ts';
+import { getHole, listHoleIds } from '../../../src/core/course/holes/index.ts';
+import { HoleValidationError, parseHole } from '../../../src/core/course/schema.ts';
 import { ShotRejectedError, type GameEvent } from '../../../src/core/game/machine.ts';
 import { ReplayFileSchema, type ReplayFile } from '../../../src/core/game/replay.ts';
 import { GameSession } from '../../../src/core/game/session.ts';
@@ -228,6 +229,58 @@ describe('window.__MM__ test API: shot and event forwarding', () => {
     const { api } = setupWithHooks();
     api.loadHole('skeleton-01');
     expect(api.fastForward(500)).toBe(60);
+  });
+});
+
+const readBunkers = (): Record<string, unknown> =>
+  JSON.parse(
+    readFileSync(join(import.meta.dirname, '../../fixtures/holes/bunkers.json'), 'utf8'),
+  ) as Record<string, unknown>;
+
+describe('window.__MM__ test API: loadHoleData', () => {
+  it('validates the data, switches to the manual clock and loads it at the tee', () => {
+    const { api, isManual } = setup();
+    const idsBefore = listHoleIds();
+    api.loadHoleData(readBunkers());
+    expect(isManual()).toBe(true);
+    expect(api.getState()).toMatchObject({
+      holeId: 'fixture-bunkers',
+      strokes: 0,
+      phase: 'aiming',
+    });
+    expect(api.getState().ball.pos).toEqual({ x: 200, y: 350 });
+    expect(listHoleIds()).toEqual(idsBefore);
+  });
+
+  it('rejects invalid data with HoleValidationError and changes nothing', () => {
+    const { api, session, isManual } = setup();
+    const hashBefore = api.getStateHash();
+    expect(() => {
+      api.loadHoleData({ ...readBunkers(), par: 9 });
+    }).toThrow(HoleValidationError);
+    expect(() => {
+      api.loadHoleData({ ...readBunkers(), par: 9 });
+    }).toThrow(/par/);
+    expect(api.getStateHash()).toBe(hashBefore);
+    expect(session.course.hole.id).toBe('skeleton-01');
+    expect(isManual()).toBe(false);
+  });
+
+  it('a shot on the data-loaded hole plays exactly like a session on the parsed hole', () => {
+    const { api } = setup();
+    const data = readBunkers();
+    api.loadHoleData(data);
+    api.shoot(-Math.PI / 2, 0.6);
+    api.fastForward('untilRest');
+    const reference = new GameSession(parseHole(data), 1);
+    reference.shoot({ angle: -Math.PI / 2, power: 0.6 });
+    reference.runUntilRest();
+    expect(api.getStateHash()).toBe(hashState(reference.state));
+  });
+
+  it('worldToClient maps world points through the renderer', () => {
+    const { api } = setup();
+    expect(api.worldToClient({ x: 10, y: 20 })).toEqual({ x: 20, y: 40 });
   });
 });
 
