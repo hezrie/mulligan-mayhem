@@ -15,6 +15,7 @@ import {
   shakeOffset,
   type BallScale,
 } from './impact.ts';
+import { drawGhostHand, ghostHandPose, shouldDrawGhostHand } from './ghost-hand.ts';
 import { countEvents, ZERO_COUNTS, type EventCounts, type FrameInput } from './fx-frame.ts';
 import { COLORS, TERRAIN_COLORS } from './palette.ts';
 import {
@@ -66,8 +67,17 @@ export type RendererFxSnapshot = Readonly<{
 }>;
 
 export interface Renderer {
-  /** Draws one frame. Reads state; never mutates it. */
-  draw(course: Course, state: Readonly<GameState>, aim: Shot | null, frame: FrameInput): void;
+  /**
+   * Draws one frame. Reads state; never mutates it. A non-null hint shows the ghost-hand demo at
+   * hint.tMs while the ball waits to be aimed.
+   */
+  draw(
+    course: Course,
+    state: Readonly<GameState>,
+    aim: Shot | null,
+    frame: FrameInput,
+    hint?: Readonly<{ tMs: number }> | null,
+  ): void;
   clientToWorld(clientX: number, clientY: number): Vec2;
   worldToClient(p: Vec2): Vec2;
   fxSnapshot(): RendererFxSnapshot;
@@ -244,7 +254,7 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
   new ResizeObserver(resize).observe(canvas);
 
   return {
-    draw(course, state, aim, frame) {
+    draw(course, state, aim, frame, hint = null) {
       // Decay before adding, so the frame that receives a hit shows its full trauma.
       const dtMs = Math.max(0, Math.min(frame.nowMs - nowMs, MAX_TRAUMA_DT_MS));
       trauma = decayTrauma(trauma, dtMs / 1000);
@@ -333,6 +343,9 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
         if (visual) {
           drawRing(ctx, pos, visual);
           if (visual.cancel) drawCancelHint(ctx, pos);
+        }
+        if (hint && shouldDrawGhostHand(state.phase, aim, hint)) {
+          drawGhostHand(ctx, ghostHandPose(pos, course.cup, hint.tMs));
         }
         lastAim = visual;
         return;
