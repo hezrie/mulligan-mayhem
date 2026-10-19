@@ -23,6 +23,7 @@ if (__TEST_API__) {
       },
       onEvent: app.hear,
       audio: app.audio,
+      storage: window.localStorage,
     }),
   );
 }

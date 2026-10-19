@@ -9,10 +9,36 @@ import type { Shot } from '../../../src/core/game/shot.ts';
 import { hashState } from '../../../src/core/hash.ts';
 import { DT } from '../../../src/core/physics/constants.ts';
 import { installTestApi, type TestApiDeps, type TestApiHost } from '../../../src/testing/api.ts';
-import type { CueEntry, FxSnapshot } from '../../../src/testing/types.ts';
+import type {
+  CueEntry,
+  FxSnapshot,
+  KeyValueStorage,
+  ScreenControl,
+} from '../../../src/testing/types.ts';
 
-function setup(fxSnapshot?: () => FxSnapshot) {
+/** A Map-backed stand-in for window.localStorage. */
+function fakeStorage() {
+  const map = new Map<string, string>();
+  const setItem = vi.fn((key: string, value: string) => {
+    map.set(key, value);
+  });
+  const storage: KeyValueStorage = {
+    get length() {
+      return map.size;
+    },
+    key: (i) => [...map.keys()][i] ?? null,
+    getItem: (key) => map.get(key) ?? null,
+    setItem,
+    removeItem: (key) => {
+      map.delete(key);
+    },
+  };
+  return { storage, map, setItem };
+}
+
+function setup(fxSnapshot?: () => FxSnapshot, screens?: ScreenControl) {
   const host: TestApiHost = {};
+  const fake = fakeStorage();
   const session = new GameSession(getHole('skeleton-01'), 1);
   let manual = false;
   const api = installTestApi(host, {
@@ -22,9 +48,11 @@ function setup(fxSnapshot?: () => FxSnapshot) {
       manual = true;
     },
     worldToClient: (p) => ({ x: p.x * 2, y: p.y * 2 }),
+    storage: fake.storage,
     ...(fxSnapshot ? { fxSnapshot } : {}),
+    ...(screens ? { screens } : {}),
   });
-  return { host, api, session, isManual: () => manual };
+  return { host, api, session, isManual: () => manual, storage: fake };
 }
 
 describe('window.__MM__ test API', () => {
@@ -120,6 +148,7 @@ function setupWithHooks(audio?: TestApiDeps['audio']) {
       getHole,
       useManualClock: () => undefined,
       worldToClient: (p) => p,
+      storage: fakeStorage().storage,
       onShot: (shot, step) => shots.push({ shot, step }),
       onEvent: (event, step) => events.push({ event, step }),
       ...(audio ? { audio } : {}),
@@ -232,7 +261,14 @@ describe('window.__MM__ test API: shot and event forwarding', () => {
     };
     const api = installTestApi(
       {},
-      { session, getHole, useManualClock: () => undefined, worldToClient: (p) => p, onEvent },
+      {
+        session,
+        getHole,
+        useManualClock: () => undefined,
+        worldToClient: (p) => p,
+        storage: fakeStorage().storage,
+        onEvent,
+      },
     );
     const spy = vi.spyOn(session, 'runUntilRest');
     api.shoot(-2.481, 0.925);
@@ -253,6 +289,7 @@ describe('window.__MM__ test API: shot and event forwarding', () => {
         getHole,
         useManualClock: () => undefined,
         worldToClient: (p) => p,
+        storage: fakeStorage().storage,
         shoot: (shot) => {
           handled.push(shot);
           session.shoot(shot);
@@ -309,5 +346,75 @@ describe('window.__MM__ test API: audio', () => {
     expect(api.getCueLog()).toEqual([]);
     api.clearCueLog();
     expect(api.getAudioState()).toEqual({ engine: 'absent' });
+  });
+});
+
+describe('window.__MM__ test API: screens', () => {
+  it('without a screen router, getScreen is play', () => {
+    const { api } = setup();
+    expect(api.getScreen()).toBe('play');
+  });
+
+  it("without a screen router, goTo('play') is a no-op", () => {
+    const { api } = setup();
+    expect(() => {
+      api.goTo('play');
+    }).not.toThrow();
+    expect(api.getScreen()).toBe('play');
+  });
+
+  it('without a screen router, goTo any other screen throws', () => {
+    const { api } = setup();
+    expect(() => {
+      api.goTo('menu');
+    }).toThrow(new Error('Unknown screen "menu": no screen router installed'));
+  });
+
+  it('with a screen router, getScreen and goTo delegate to it', () => {
+    let current = 'menu';
+    const goTo = vi.fn((id: string) => {
+      current = id;
+    });
+    const { api } = setup(undefined, { current: () => current, goTo });
+    expect(api.getScreen()).toBe('menu');
+    api.goTo('settings');
+    expect(goTo).toHaveBeenCalledWith('settings');
+    expect(api.getScreen()).toBe('settings');
+    api.goTo('play');
+    expect(goTo).toHaveBeenCalledTimes(2);
+    expect(api.getScreen()).toBe('play');
+  });
+});
+
+describe('window.__MM__ test API: storage', () => {
+  it('seedStorage calls setItem once per entry', () => {
+    const { api, storage } = setup();
+    api.seedStorage({ a: '1', 'mm:b': '2' });
+    expect(storage.setItem).toHaveBeenCalledTimes(2);
+    expect(storage.setItem).toHaveBeenCalledWith('a', '1');
+    expect(storage.setItem).toHaveBeenCalledWith('mm:b', '2');
+  });
+
+  it('readStorage returns only keys with the prefix; clearStorage removes only those', () => {
+    const { api } = setup();
+    api.seedStorage({ a: '1', 'mm:b': '2' });
+    expect(api.readStorage('mm:')).toEqual({ 'mm:b': '2' });
+    api.clearStorage('mm:');
+    expect(api.readStorage()).toEqual({ a: '1' });
+  });
+
+  it('readStorage and clearStorage default to every key', () => {
+    const { api, storage } = setup();
+    api.seedStorage({ a: '1', 'mm:b': '2', 'mm:c': '3' });
+    expect(api.readStorage()).toEqual({ a: '1', 'mm:b': '2', 'mm:c': '3' });
+    api.clearStorage();
+    expect(storage.map.size).toBe(0);
+    expect(api.readStorage()).toEqual({});
+  });
+
+  it('readStorage returns a plain object', () => {
+    const { api } = setup();
+    api.seedStorage({ k: 'v' });
+    expect(Object.getPrototypeOf(api.readStorage())).toBe(Object.prototype);
   });
 });

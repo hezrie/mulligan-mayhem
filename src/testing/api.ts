@@ -4,7 +4,14 @@ import type { Shot } from '../core/game/shot.ts';
 import { hashState } from '../core/hash.ts';
 import type { Vec2 } from '../core/math/vec2.ts';
 import { DT } from '../core/physics/constants.ts';
-import type { AudioDebugState, CueEntry, FxSnapshot, MulliganTestApi } from './types.ts';
+import type {
+  AudioDebugState,
+  CueEntry,
+  FxSnapshot,
+  KeyValueStorage,
+  MulliganTestApi,
+  ScreenControl,
+} from './types.ts';
 
 export interface TestApiDeps {
   readonly session: GameSession;
@@ -24,6 +31,19 @@ export interface TestApiDeps {
     readonly cueLog: { entries(): readonly CueEntry[]; clear(): void };
     debugState(): AudioDebugState;
   };
+  readonly storage: KeyValueStorage;
+  /** The screen router; until one exists the game only has the play screen. */
+  readonly screens?: ScreenControl;
+}
+
+/** Every stored key starting with `prefix`, collected first so removal can't skip indices. */
+function keysWithPrefix(storage: KeyValueStorage, prefix: string): string[] {
+  const keys: string[] = [];
+  for (let i = 0; i < storage.length; i++) {
+    const key = storage.key(i);
+    if (key?.startsWith(prefix)) keys.push(key);
+  }
+  return keys;
 }
 
 /** Anything that can hold the API: `window` in the browser, a plain object in unit tests. */
@@ -33,7 +53,7 @@ export interface TestApiHost {
 
 /** Installs `__MM__` on the host. Only ever called from main.ts behind `__TEST_API__`. */
 export function installTestApi(host: TestApiHost, deps: TestApiDeps): MulliganTestApi {
-  const { session } = deps;
+  const { session, storage } = deps;
   const shoot =
     deps.shoot ??
     ((shot: Shot) => {
@@ -64,6 +84,28 @@ export function installTestApi(host: TestApiHost, deps: TestApiDeps): MulliganTe
     getCueLog: () => structuredClone([...(deps.audio?.cueLog.entries() ?? [])]),
     clearCueLog: () => deps.audio?.cueLog.clear(),
     getAudioState: () => deps.audio?.debugState() ?? { engine: 'absent' },
+    getScreen: () => deps.screens?.current() ?? 'play',
+    goTo(id) {
+      if (deps.screens) {
+        deps.screens.goTo(id);
+        return;
+      }
+      if (id !== 'play') throw new Error(`Unknown screen "${id}": no screen router installed`);
+    },
+    seedStorage(entries) {
+      for (const [key, value] of Object.entries(entries)) storage.setItem(key, value);
+    },
+    readStorage(prefix = '') {
+      const out: Record<string, string> = {};
+      for (const key of keysWithPrefix(storage, prefix)) {
+        const value = storage.getItem(key);
+        if (value !== null) out[key] = value;
+      }
+      return out;
+    },
+    clearStorage(prefix = '') {
+      for (const key of keysWithPrefix(storage, prefix)) storage.removeItem(key);
+    },
   };
   host.__MM__ = api;
   return api;
