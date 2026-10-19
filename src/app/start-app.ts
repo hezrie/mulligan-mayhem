@@ -13,6 +13,7 @@ import { createHud } from '../ui/hud.ts';
 import { createSettingsStore } from '../ui/settings-store.ts';
 import { createShell } from '../ui/shell.ts';
 import { getBrowserStorage } from '../ui/storage.ts';
+import { applyTextSize } from '../ui/text-size.ts';
 
 /** What main.ts hands to the dev/test-only test API. */
 export interface AppHandles {
@@ -41,6 +42,7 @@ export function startApp(app: HTMLElement, canvas: HTMLCanvasElement): AppHandle
   const shotListeners = new Set<ShotListener>();
   // The page's one settings store; the settings screen must reuse it, never create another.
   const settings = createSettingsStore(getBrowserStorage(window));
+  applyTextSize(document.documentElement, settings);
   const { soundscape, cueLog, debugState } = createBrowserSoundscape(window);
   const hear = (trigger: SoundTrigger): void => {
     soundscape.handle(trigger, { step: session.state.step, par: session.course.hole.par });
@@ -70,7 +72,7 @@ export function startApp(app: HTMLElement, canvas: HTMLCanvasElement): AppHandle
   };
   const hud = createHud(app, restart);
   const complete = createCompleteScreen(app, restart);
-  createShell(app, { window });
+  createShell(app, { window, settings });
 
   // Real-time loop only: __MM__.fastForward calls session.advance directly, unpaced.
   const pacer = createPacer(() => true);

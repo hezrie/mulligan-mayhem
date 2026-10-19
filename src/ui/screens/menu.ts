@@ -16,6 +16,13 @@ export const MENU_ITEMS: readonly MenuItem[] = [
       nav.reset('play');
     },
   },
+  {
+    id: 'settings',
+    label: 'Settings',
+    select: (nav) => {
+      nav.open('settings');
+    },
+  },
 ];
 
 /** Title screen: the game's name up top, big buttons in the thumb zone below. */

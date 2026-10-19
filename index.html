@@ -48,7 +48,9 @@
       .hud {
         grid-row: 1;
         display: flex;
-        gap: 1rem;
+        /* Wrap, not clip, when large text makes the HUD wider than a phone. */
+        flex-wrap: wrap;
+        gap: 0.25rem 1rem;
         align-items: center;
         justify-content: center;
         padding: max(env(safe-area-inset-top), 0.5rem) 1rem 0.5rem;
@@ -126,6 +128,37 @@
         gap: 1rem;
         width: min(100%, 20rem);
       }
+      [data-testid='screen-settings'] {
+        grid-template-rows: auto 1fr auto;
+        gap: 1rem;
+        overflow-y: auto;
+      }
+      .settings-title {
+        margin: 0;
+        font-size: 2rem;
+      }
+      .settings-controls {
+        display: grid;
+        align-content: start;
+        gap: 1rem;
+        width: min(100%, 22rem);
+      }
+      .settings-controls label {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        min-height: 44px;
+        font-size: 1.1rem;
+      }
+      .settings-controls select {
+        font: inherit;
+      }
+      .settings-controls input[type='checkbox'] {
+        width: 1.5rem;
+        height: 1.5rem;
+      }
+      .settings-back,
       .menu-items button {
         min-height: 56px;
         font: inherit;
@@ -136,6 +169,9 @@
         border: none;
         border-radius: 999px;
         cursor: pointer;
+      }
+      .settings-back {
+        width: min(100%, 20rem);
       }
     </style>
   </head>
