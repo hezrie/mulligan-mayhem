@@ -1,11 +1,20 @@
 import type { Course } from '../core/course/course.ts';
 import type { GameState } from '../core/game/state.ts';
 import type { Shot } from '../core/game/shot.ts';
-import type { Vec2 } from '../core/math/vec2.ts';
+import { length, type Vec2 } from '../core/math/vec2.ts';
 import { BALL_RADIUS } from '../core/physics/constants.ts';
+import { Rng } from '../core/rng.ts';
 import { scoreName } from '../core/scoring/score.ts';
 import { aimStrokeStyles, aimVisual, bandEnd, ringTicks, type AimVisual } from './aim.ts';
 import { lerp } from './easing.ts';
+import {
+  addTrauma,
+  ballScale,
+  decayTrauma,
+  shakeAmplitude,
+  shakeOffset,
+  type BallScale,
+} from './impact.ts';
 import { countEvents, ZERO_COUNTS, type EventCounts, type FrameInput } from './fx-frame.ts';
 import { COLORS, TERRAIN_COLORS } from './palette.ts';
 import {
@@ -27,6 +36,13 @@ const CANCEL_FONT = 'bold 12px sans-serif';
 /** Below the ball, clear of the power ring. */
 const CANCEL_TEXT_OFFSET = 30;
 const TICK_WIDTH = 2;
+/** Frame gaps longer than this (tab switch, breakpoint) decay trauma as if only this much passed. */
+const MAX_TRAUMA_DT_MS = 100;
+/** The shake jitter has its own fixed seed, so the simulation's rng is never touched. */
+const SHAKE_SEED = 0x5eed;
+/** Drop-shadow offset in world units: light from the upper left. */
+const SHADOW_OFFSET: Vec2 = { x: 2, y: 3 };
+const AT_REST: BallScale = { along: 1, across: 1 };
 
 /** What the renderer remembers about the drop it is animating. */
 interface Plunk {
@@ -45,6 +61,8 @@ export type RendererFxSnapshot = Readonly<{
   plunk: Readonly<{ elapsedMs: number; stamp: string; done: boolean }> | null;
   /** The aim drawn in the last frame, or null when there was none. */
   aim: AimVisual | null;
+  /** Shake trauma, the shake amplitude this frame (CSS px), and the ball's stretch along its motion. */
+  impact: Readonly<{ trauma: number; shakePx: number; ballAlong: number }>;
 }>;
 
 export interface Renderer {
@@ -122,9 +140,23 @@ function drawCancelHint(ctx: CanvasRenderingContext2D, ball: Vec2): void {
   ctx.fillText(CANCEL_TEXT, ball.x, y);
 }
 
-function drawBall(ctx: CanvasRenderingContext2D, pos: Vec2, radius: number): void {
+function drawShadow(ctx: CanvasRenderingContext2D, pos: Vec2): void {
   ctx.beginPath();
-  ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+  ctx.arc(pos.x + SHADOW_OFFSET.x, pos.y + SHADOW_OFFSET.y, BALL_RADIUS, 0, Math.PI * 2);
+  ctx.fillStyle = COLORS.wallShadow;
+  ctx.fill();
+}
+
+function drawBall(
+  ctx: CanvasRenderingContext2D,
+  pos: Vec2,
+  radius: number,
+  vel: Vec2 = { x: 0, y: 0 },
+  shape: BallScale = AT_REST,
+): void {
+  ctx.beginPath();
+  const rotation = Math.atan2(vel.y, vel.x);
+  ctx.ellipse(pos.x, pos.y, radius * shape.along, radius * shape.across, rotation, 0, Math.PI * 2);
   ctx.fillStyle = COLORS.ball;
   ctx.fill();
   ctx.strokeStyle = COLORS.ballOutline;
@@ -191,6 +223,11 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
   let prevBallPos: Vec2 | null = null;
   let plunk: Plunk | null = null;
   let lastAim: AimVisual | null = null;
+  const shakeRng = new Rng(SHAKE_SEED);
+  let trauma = 0;
+  let shakePx = 0;
+  let lastWallHitMs = -Infinity;
+  let ballAlong = 1;
 
   // Keep the backing store matched to the canvas's CSS size × device pixel ratio, so drawing is
   // crisp and the view fits what's on screen. A ResizeObserver catches every layout change
@@ -208,7 +245,16 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
 
   return {
     draw(course, state, aim, frame) {
+      // Decay before adding, so the frame that receives a hit shows its full trauma.
+      const dtMs = Math.max(0, Math.min(frame.nowMs - nowMs, MAX_TRAUMA_DT_MS));
+      trauma = decayTrauma(trauma, dtMs / 1000);
       nowMs = frame.nowMs;
+      for (const e of frame.events) {
+        if (e.type === 'bounce' && e.impulse > 0) {
+          trauma = addTrauma(trauma, e.impulse);
+          lastWallHitMs = nowMs;
+        }
+      }
       eventCounts = countEvents(eventCounts, frame.events);
       if ((window.devicePixelRatio || 1) !== dpr) resize();
       const { hole } = course;
@@ -217,13 +263,16 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.fillStyle = COLORS.background;
       ctx.fillRect(0, 0, cssWidth, cssHeight);
+      // Only the drawing shakes; `view` stays unshaken so pointer mapping never jitters.
+      const shake = shakeOffset(state.phase, trauma, shakeRng);
+      shakePx = state.phase === 'rolling' || state.phase === 'holed' ? shakeAmplitude(trauma) : 0;
       ctx.setTransform(
         dpr * view.scale,
         0,
         0,
         dpr * view.scale,
-        dpr * view.offsetX,
-        dpr * view.offsetY,
+        dpr * (view.offsetX + shake.x),
+        dpr * (view.offsetY + shake.y),
       );
 
       tracePolygon(ctx, hole.boundary);
@@ -276,7 +325,11 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
           if (!visual.cancel) drawAim(ctx, pos, shown);
           drawBand(ctx, pos, shown, visual);
         }
-        drawBall(ctx, pos, BALL_RADIUS);
+        const { vel } = state.ball;
+        const shape = ballScale(length(vel), nowMs - lastWallHitMs);
+        ballAlong = shape.along;
+        drawShadow(ctx, pos);
+        drawBall(ctx, pos, BALL_RADIUS, vel, shape);
         if (visual) {
           drawRing(ctx, pos, visual);
           if (visual.cancel) drawCancelHint(ctx, pos);
@@ -285,6 +338,7 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
         return;
       }
 
+      ballAlong = 1;
       const f = plunkFrame(nowMs - plunk.startMs);
       if (!f.done) drawRipple(ctx, course.cup, f);
       drawFlag(ctx, course.cup, f.flagLift);
@@ -317,6 +371,7 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
           }
         : null,
       aim: lastAim,
+      impact: { trauma, shakePx, ballAlong },
     }),
   };
 }
