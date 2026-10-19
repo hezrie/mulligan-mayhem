@@ -14,6 +14,7 @@ import { parseHole, type Hole } from '../../src/core/course/schema.ts';
 import { tick, type GameEvent } from '../../src/core/game/machine.ts';
 import { GameSession } from '../../src/core/game/session.ts';
 import { MIN_SHOT_POWER, type Shot } from '../../src/core/game/shot.ts';
+import type { GamePhase } from '../../src/core/game/state.ts';
 import { hashState } from '../../src/core/hash.ts';
 import { distanceToSegment, pointInPolygon } from '../../src/core/math/geometry.ts';
 import { length } from '../../src/core/math/vec2.ts';
@@ -35,7 +36,9 @@ const pinball = loadFixture('pinball');
 const bunkers = loadFixture('bunkers');
 /** Ice everywhere: the slowest-stopping terrain, with long rolls that bounce off every wall. */
 const iceRink = loadFixture('ice-rink');
-const HOLES: Hole[] = [getHole('skeleton-01'), pinball, bunkers, iceRink];
+/** A pond between tee and cup, so many shots end in the water hazard. */
+const pond = loadFixture('pond');
+const HOLES: Hole[] = [getHole('skeleton-01'), pinball, bunkers, iceRink, pond];
 
 const SHOTS_PER_HOLE = 300;
 const SLOWEST_DECEL = Math.min(...TERRAIN_KINDS.map((k) => TERRAIN[k].rollingDecel));
@@ -144,6 +147,34 @@ describe('full-power shots on ice', () => {
       expect(report.steps).toBeLessThan(MAX_ROLL_STEPS);
     },
   );
+});
+
+describe('water hazard on the pond', () => {
+  it('every water entry costs exactly one stroke and returns the ball to its last resting spot', () => {
+    const rng = new Rng(20261019);
+    let entries = 0;
+    for (let game = 0; game < 60; game++) {
+      const session = new GameSession(pond, game);
+      for (let shot = 0; shot < 4 && session.state.phase === 'aiming'; shot++) {
+        const before = session.state;
+        session.shoot(randomShot(rng));
+        // Read through a function so TypeScript doesn't keep the loop guard's 'aiming' narrowing.
+        const phaseOf = (s: GameSession): GamePhase => s.state.phase;
+        let phase = phaseOf(session);
+        while (phase === 'rolling') {
+          session.advance(1);
+          phase = phaseOf(session);
+        }
+        if (phase !== 'hazard') continue;
+        entries++;
+        session.runUntilRest();
+        expect(session.state.phase).toBe('aiming');
+        expect(session.state.ball.pos).toEqual(before.lastRest);
+        expect(session.state.strokes).toBe(before.strokes + 2);
+      }
+    }
+    expect(entries).toBeGreaterThan(10);
+  });
 });
 
 describe('determinism', () => {

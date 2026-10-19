@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { distanceToSegment, pointInPolygon, polygonEdges, type Segment } from '../math/geometry.ts';
 import { BALL_RADIUS, CUP_RADIUS } from '../physics/constants.ts';
-import { TERRAIN_KINDS } from '../physics/terrain.ts';
+import type { Vec2 } from '../math/vec2.ts';
+import { TERRAIN_KINDS, type TerrainKind } from '../physics/terrain.ts';
 
 const Vec2Schema = z.strictObject({ x: z.number(), y: z.number() });
 
@@ -10,6 +11,20 @@ const SegmentSchema = z
   .refine((s) => s.a.x !== s.b.x || s.a.y !== s.b.y, 'wall has zero length');
 
 const TerrainKindSchema = z.enum(TERRAIN_KINDS);
+
+interface TerrainLayout {
+  readonly base: TerrainKind;
+  readonly zones: readonly { readonly kind: TerrainKind; readonly polygon: readonly Vec2[] }[];
+}
+
+/** Terrain under a point: the last zone containing it wins (later zones paint over earlier). */
+export function terrainKindAt(terrain: TerrainLayout, p: Vec2): TerrainKind {
+  for (let i = terrain.zones.length - 1; i >= 0; i--) {
+    const zone = terrain.zones[i];
+    if (zone && pointInPolygon(p, zone.polygon)) return zone.kind;
+  }
+  return terrain.base;
+}
 
 /** A hole is pure data. See docs/ARCHITECTURE.md ("Hole schema") for field meanings. */
 export const HoleSchema = z
@@ -47,7 +62,9 @@ export const HoleSchema = z
     if (segments.some((s) => distanceToSegment(hole.tee, s) <= BALL_RADIUS)) {
       issue('tee', 'tee must be clear of every wall by more than the ball radius');
     }
+    if (terrainKindAt(hole.terrain, hole.tee) === 'water') issue('tee', 'tee must not be in water');
     if (!pointInPolygon(hole.cup, hole.boundary)) issue('cup', 'cup must be inside the boundary');
+    if (terrainKindAt(hole.terrain, hole.cup) === 'water') issue('cup', 'cup must not be in water');
     if (segments.some((s) => distanceToSegment(hole.cup, s) < Math.max(BALL_RADIUS, radius))) {
       issue('cup', 'cup must be clear of every wall so the ball can reach it');
     }

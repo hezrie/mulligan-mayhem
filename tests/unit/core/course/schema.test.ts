@@ -66,6 +66,43 @@ describe('parseHole', () => {
     expect(hole.terrain).toEqual({ base: kind, zones: [{ kind, polygon }] });
   });
 
+  describe('water', () => {
+    const square = (x: number, y: number) => [
+      vec2(x - 20, y - 20),
+      vec2(x + 20, y - 20),
+      vec2(x + 20, y + 20),
+      vec2(x - 20, y + 20),
+    ];
+    const withZones = (base: string, zones: { kind: string; polygon: unknown[] }[]) => ({
+      terrain: { base, zones },
+    });
+
+    it('rejects a tee inside a water zone', () => {
+      const overrides = withZones('fairway', [{ kind: 'water', polygon: square(200, 350) }]);
+      expect(() => makeHole(overrides)).toThrow(/tee.*water/);
+    });
+
+    it('rejects a cup inside a water zone', () => {
+      const overrides = withZones('fairway', [{ kind: 'water', polygon: square(200, 50) }]);
+      expect(() => makeHole(overrides)).toThrow(/cup.*water/);
+    });
+
+    it('rejects a hole whose base terrain is water under the tee', () => {
+      const overrides = withZones('water', [{ kind: 'fairway', polygon: square(200, 50) }]);
+      expect(() => makeHole(overrides)).toThrow(/tee.*water/);
+    });
+
+    it('accepts water away from tee and cup, and dry zones painted over water', () => {
+      const zones = [
+        { kind: 'water', polygon: square(200, 200) },
+        { kind: 'fairway', polygon: square(200, 350) },
+        { kind: 'fairway', polygon: square(200, 50) },
+      ];
+      expect(makeHole(withZones('fairway', zones.slice(0, 1))).terrain.zones).toHaveLength(1);
+      expect(makeHole(withZones('water', zones.slice(1))).terrain.base).toBe('water');
+    });
+  });
+
   it('names the hole and the failing path in the error message', () => {
     try {
       parseHole({ id: 'broken-hole', par: 9 });

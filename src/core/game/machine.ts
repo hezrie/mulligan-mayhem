@@ -1,7 +1,7 @@
 import type { Course } from '../course/course.ts';
 import { scale, ZERO } from '../math/vec2.ts';
 import { direction } from '../math/trig.ts';
-import { MAX_ROLL_STEPS, MAX_SHOT_SPEED } from '../physics/constants.ts';
+import { HAZARD_PAUSE_STEPS, MAX_ROLL_STEPS, MAX_SHOT_SPEED } from '../physics/constants.ts';
 import { stepBall, type PhysicsEvent } from '../physics/step.ts';
 import { seedState } from '../rng.ts';
 import { isValidShot, type Shot } from './shot.ts';
@@ -54,9 +54,23 @@ export function shoot(state: GameState, shot: Shot): GameState {
   };
 }
 
+/** Counts the hazard pause, then puts the ball back at its last resting spot with a penalty. */
+function tickHazard(clocked: GameState): GameState {
+  const rollSteps = clocked.rollSteps + 1;
+  if (rollSteps < HAZARD_PAUSE_STEPS) return { ...clocked, rollSteps };
+  return {
+    ...clocked,
+    phase: 'aiming',
+    ball: { pos: clocked.lastRest, vel: ZERO },
+    strokes: clocked.strokes + 1,
+    rollSteps: 0,
+  };
+}
+
 /** Advances the game by one fixed step. The clock always advances; the ball moves only while rolling. */
 export function tick(state: GameState, course: Course): TickResult {
   const clocked = { ...state, step: state.step + 1 };
+  if (state.phase === 'hazard') return { state: tickHazard(clocked), events: [] };
   if (state.phase !== 'rolling') return { state: clocked, events: [] };
 
   const result = stepBall(state.ball, course);
@@ -66,6 +80,11 @@ export function tick(state: GameState, course: Course): TickResult {
   if (result.holed) {
     events.push({ type: 'holed', strokes: state.strokes });
     return { state: { ...clocked, phase: 'holed', ball: result.ball, rollSteps: 0 }, events };
+  }
+  if (result.inWater) {
+    // Checked before rest and the safety cap, so neither can leave the ball resting in water.
+    const ball = { pos: result.ball.pos, vel: ZERO };
+    return { state: { ...clocked, phase: 'hazard', ball, rollSteps: 0 }, events };
   }
   if (result.atRest || rollSteps >= MAX_ROLL_STEPS) {
     const pos = result.ball.pos;

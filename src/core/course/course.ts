@@ -2,7 +2,7 @@ import { pointInPolygon, polygonEdges, type Segment } from '../math/geometry.ts'
 import type { Vec2 } from '../math/vec2.ts';
 import { CUP_RADIUS } from '../physics/constants.ts';
 import type { TerrainKind } from '../physics/terrain.ts';
-import type { Hole } from './schema.ts';
+import { terrainKindAt, type Hole } from './schema.ts';
 
 /** A hole prepared for simulation: collision segments and resolved defaults. Never mutated. */
 export interface Course {
@@ -32,6 +32,5 @@ export function zoneIndexAt(course: Course, p: Vec2): number {
 }
 
 export function terrainAt(course: Course, p: Vec2): TerrainKind {
-  const index = zoneIndexAt(course, p);
-  return course.hole.terrain.zones[index]?.kind ?? course.hole.terrain.base;
+  return terrainKindAt(course.hole.terrain, p);
 }

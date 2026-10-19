@@ -109,7 +109,9 @@ Chrome, Safari and Firefox. See [ADR 0001](decisions/0001-custom-deterministic-p
 ```
             shoot(shot)                 ball at rest (not in cup)
   aiming ───────────────▶ rolling ───────────────────────────────▶ aiming
-                             │
+                             │  │
+                             │  │ ball centre in water        HAZARD_PAUSE_STEPS later:
+                             │  └──────────────────▶ hazard ──▶ aiming (ball at lastRest, +1 stroke)
                              │ ball captured by cup
                              ▼
                            holed ──(restart)──▶ aiming (strokes = 0)
@@ -117,9 +119,11 @@ Chrome, Safari and Firefox. See [ADR 0001](decisions/0001-custom-deterministic-p
 
 - `shoot` is accepted only while `aiming` and only with `power > 0`. Each accepted shot adds 1
   stroke and sets velocity `= power × MAX_SHOT_SPEED` in direction `angle`.
-- When rolling ends, `lastRest` records where the ball stopped. Water hazards will reset there.
-- Future phases slot in here: `hazard` (water → +1 stroke → reset to `lastRest`) and `next`
-  (course progression).
+- When rolling ends, `lastRest` records where the ball stopped.
+- If the ball's centre ends a step over water, the ball freezes there and the phase becomes
+  `hazard` for `HAZARD_PAUSE_STEPS` (0.5 s, counted in `rollSteps`). Then the ball goes back to
+  `lastRest` at zero velocity with a 1-stroke penalty. Holes may not put the tee or cup in water.
+- Future phases slot in here: `next` (course progression).
 
 `GameState` is a plain, serializable object: `holeId`, `phase`, `ball { pos, vel }`, `strokes`,
 `lastRest`, `step`, `rollSteps`, `rngState`. `hashState(state)` folds every field, using exact float

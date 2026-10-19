@@ -30,6 +30,11 @@ describe('terrain table', () => {
     expect(TERRAIN.ice).toEqual({ rollingDecel: 90, label: 'Ice' });
     expect(TERRAIN.ice.rollingDecel).toBe(TERRAIN.fairway.rollingDecel / 4);
   });
+
+  it('water is a terrain kind', () => {
+    expect(TERRAIN_KINDS).toContain('water');
+    expect(TERRAIN.water.label).toBe('Water');
+  });
 });
 
 describe('constants', () => {

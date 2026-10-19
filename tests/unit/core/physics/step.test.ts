@@ -81,6 +81,41 @@ describe('stepBall', () => {
   });
 });
 
+describe('stepBall over water', () => {
+  /** A water band across the middle of the test box, y from 180 to 240. */
+  const pond = makeCourse({
+    terrain: {
+      base: 'fairway',
+      zones: [
+        { kind: 'water', polygon: [vec2(0, 180), vec2(400, 180), vec2(400, 240), vec2(0, 240)] },
+      ],
+    },
+  });
+
+  it('reports inWater when the ball centre ends a step in a water zone', () => {
+    const r = stepBall({ pos: vec2(200, 241), vel: vec2(0, -300) }, pond);
+    expect(r.ball.pos.y).toBeLessThan(240);
+    expect(r.inWater).toBe(true);
+  });
+
+  it("does not report inWater when only the ball's edge overlaps water", () => {
+    const r = stepBall({ pos: vec2(200, 246), vel: vec2(0, -300) }, pond);
+    expect(r.ball.pos.y).toBeGreaterThan(240);
+    expect(r.ball.pos.y - BALL_RADIUS).toBeLessThan(240);
+    expect(r.inWater).toBe(false);
+  });
+
+  it('does not report inWater on dry terrain', () => {
+    expect(stepBall({ pos: vec2(200, 300), vel: vec2(0, -300) }, pond).inWater).toBe(false);
+  });
+
+  it('a ball that would come to rest in water is reported in water', () => {
+    const r = stepBall({ pos: vec2(200, 200), vel: vec2(REST_SPEED * 0.5, 0) }, pond);
+    expect(r.atRest).toBe(true);
+    expect(r.inWater).toBe(true);
+  });
+});
+
 describe('stepBall on rough and sand', () => {
   /** A long open box so a speed-400 roll on fairway (~222 units) never reaches a wall. */
   const longBox = (terrain: Record<string, unknown>) =>

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { getHole } from '../../../../src/core/course/holes/index.ts';
 import { GameSession, MAX_PENDING_EVENTS } from '../../../../src/core/game/session.ts';
 import { hashState } from '../../../../src/core/hash.ts';
+import { vec2, ZERO } from '../../../../src/core/math/vec2.ts';
 import { makeHole } from '../../../helpers/holes.ts';
 
 const UP = -Math.PI / 2;
@@ -17,6 +18,21 @@ describe('GameSession', () => {
     expect(steps).toBeGreaterThan(0);
     expect(session.state.phase).toBe('aiming');
     expect(session.runUntilRest()).toBe(0);
+  });
+
+  it('runUntilRest plays through a water hazard back to aiming', () => {
+    const water = [vec2(0, 180), vec2(400, 180), vec2(400, 240), vec2(0, 240)];
+    const hole = makeHole({
+      terrain: { base: 'fairway', zones: [{ kind: 'water', polygon: water }] },
+    });
+    const session = new GameSession(hole, 1);
+    session.shoot({ angle: UP, power: 0.5 });
+    session.runUntilRest();
+    expect(session.state.phase).toBe('aiming');
+    expect(session.state.ball).toEqual({ pos: vec2(200, 350), vel: ZERO });
+    expect(session.state.strokes).toBe(2);
+    session.shoot({ angle: UP, power: 0.5 });
+    expect(session.state.phase).toBe('rolling');
   });
 
   it('advances a fixed number of steps and collects events', () => {

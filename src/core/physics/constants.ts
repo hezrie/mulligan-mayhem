@@ -28,5 +28,8 @@ export const WALL_FRICTION = 0.05;
 export const MAX_ROLL_SECONDS = 30;
 export const MAX_ROLL_STEPS = Math.ceil(MAX_ROLL_SECONDS / DT);
 
+/** Pause after the ball enters water, before it returns to its last resting spot: 0.5 s. */
+export const HAZARD_PAUSE_STEPS = 60;
+
 /** Longest real frame the clock will simulate, e.g. after a backgrounded tab returns. */
 export const MAX_FRAME_SECONDS = 0.25;

@@ -1,9 +1,14 @@
 import { compileCourse, type Course } from '../course/course.ts';
 import type { Hole } from '../course/schema.ts';
-import { MAX_ROLL_STEPS } from '../physics/constants.ts';
+import { HAZARD_PAUSE_STEPS, MAX_ROLL_STEPS } from '../physics/constants.ts';
 import { createGame, shoot, tick, type GameEvent } from './machine.ts';
 import type { Shot } from './shot.ts';
 import type { GameState } from './state.ts';
+
+/** A shot is still playing out: the ball is rolling or paused in a water hazard. */
+export function isResolvingShot(state: GameState): boolean {
+  return state.phase === 'rolling' || state.phase === 'hazard';
+}
 
 /** Cap on undrained events, so a session nobody drains (e.g. the replay runner) stays bounded. */
 export const MAX_PENDING_EVENTS = 1024;
@@ -60,10 +65,10 @@ export class GameSession {
     return events;
   }
 
-  /** Steps until the ball stops rolling. Always terminates (safety cap). Returns steps run. */
+  /** Steps until the ball stops, through any hazard pause. Always terminates. Returns steps run. */
   runUntilRest(): number {
     let steps = 0;
-    while (this.#state.phase === 'rolling' && steps <= MAX_ROLL_STEPS) {
+    while (isResolvingShot(this.#state) && steps <= MAX_ROLL_STEPS + HAZARD_PAUSE_STEPS) {
       const r = tick(this.#state, this.#course);
       this.#state = r.state;
       this.#record(r.events);

@@ -24,6 +24,8 @@ export interface StepResult {
   readonly events: readonly PhysicsEvent[];
   readonly holed: boolean;
   readonly atRest: boolean;
+  /** The ball centre ended this step over water: a hazard, which the game state machine handles. */
+  readonly inWater: boolean;
 }
 
 /** Applies constant rolling deceleration; speed shrinks toward zero and never reverses. */
@@ -37,7 +39,7 @@ function applyRollingFriction(ball: BallState, course: Course): Vec2 {
 
 /**
  * Advances one ball by one fixed step (DT): friction, then movement in substeps of at most half
- * the ball radius (so it can't tunnel through a wall), wall collisions, cup capture and rest.
+ * the ball radius (so it can't tunnel through a wall), wall collisions, cup capture, water and rest.
  */
 export function stepBall(ball: BallState, course: Course): StepResult {
   let vel = applyRollingFriction(ball, course);
@@ -58,12 +60,15 @@ export function stepBall(ball: BallState, course: Course): StepResult {
     }
     if (distance(pos, course.cup) <= course.cupRadius && length(vel) <= CUP_CAPTURE_SPEED) {
       events.push({ type: 'cup' });
-      return { ball: { pos: course.cup, vel: ZERO }, events, holed: true, atRest: true };
+      const ball = { pos: course.cup, vel: ZERO };
+      return { ball, events, holed: true, atRest: true, inWater: false };
     }
   }
 
+  // Reported even when the ball also stops, so a ball can never come to rest in water.
+  const inWater = terrainAt(course, pos) === 'water';
   if (length(vel) < REST_SPEED) {
-    return { ball: { pos, vel: ZERO }, events, holed: false, atRest: true };
+    return { ball: { pos, vel: ZERO }, events, holed: false, atRest: true, inWater };
   }
-  return { ball: { pos, vel }, events, holed: false, atRest: false };
+  return { ball: { pos, vel }, events, holed: false, atRest: false, inWater };
 }

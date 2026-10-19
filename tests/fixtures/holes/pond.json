@@ -1,0 +1,29 @@
+{
+  "id": "fixture-pond",
+  "name": "Fixture: Pond",
+  "par": 3,
+  "size": { "width": 400, "height": 400 },
+  "boundary": [
+    { "x": 0, "y": 0 },
+    { "x": 400, "y": 0 },
+    { "x": 400, "y": 400 },
+    { "x": 0, "y": 400 }
+  ],
+  "walls": [],
+  "tee": { "x": 200, "y": 350 },
+  "cup": { "x": 200, "y": 60 },
+  "terrain": {
+    "base": "fairway",
+    "zones": [
+      {
+        "kind": "water",
+        "polygon": [
+          { "x": 80, "y": 170 },
+          { "x": 320, "y": 170 },
+          { "x": 320, "y": 250 },
+          { "x": 80, "y": 250 }
+        ]
+      }
+    ]
+  }
+}
