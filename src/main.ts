@@ -17,7 +17,7 @@ if (__TEST_API__) {
       useManualClock: app.useManualClock,
       shoot: app.shoot,
       worldToClient: (p) => app.renderer.worldToClient(p),
-      fxSnapshot: () => app.renderer.fxSnapshot(),
+      fxSnapshot: () => ({ ...app.renderer.fxSnapshot(), pace: app.pacer.snapshot() }),
       onShot: (shot) => {
         app.hear({ type: 'shot', power: shot.power });
       },
