@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   closestPointOnSegment,
+  distanceBetweenSegments,
   distanceToSegment,
   pointInPolygon,
   polygonEdges,
@@ -61,5 +62,37 @@ describe('polygonEdges', () => {
       { a: tri[1], b: tri[2] },
       { a: tri[2], b: tri[0] },
     ]);
+  });
+});
+
+describe('distanceBetweenSegments', () => {
+  const s = (ax: number, ay: number, bx: number, by: number) => ({
+    a: vec2(ax, ay),
+    b: vec2(bx, by),
+  });
+  const cases = [
+    { name: 'crossing', s1: s(0, 0, 10, 10), s2: s(0, 10, 10, 0), expected: 0 },
+    { name: 'T-junction', s1: s(0, 0, 10, 0), s2: s(5, 0, 5, 10), expected: 0 },
+    { name: 'collinear overlapping', s1: s(0, 0, 10, 0), s2: s(5, 0, 15, 0), expected: 0 },
+    { name: 'parallel', s1: s(0, 0, 100, 0), s2: s(0, 20, 100, 20), expected: 20 },
+    { name: 'collinear disjoint', s1: s(0, 0, 10, 0), s2: s(20, 0, 30, 0), expected: 10 },
+  ];
+
+  for (const { name, s1, s2, expected } of cases) {
+    it(`returns exactly ${String(expected)} for ${name} segments`, () => {
+      expect(distanceBetweenSegments(s1, s2)).toBe(expected);
+    });
+
+    it(`is symmetric for ${name} segments`, () => {
+      expect(distanceBetweenSegments(s2, s1)).toBe(distanceBetweenSegments(s1, s2));
+    });
+  }
+
+  it('measures the closest end-point distance for skewed, non-touching segments', () => {
+    expect(distanceBetweenSegments(s(0, 0, 10, 0), s(13, 4, 20, 10))).toBe(5);
+  });
+
+  it('returns 0 when an end-point touches the other segment', () => {
+    expect(distanceBetweenSegments(s(0, 0, 10, 0), s(10, 0, 10, 5))).toBe(0);
   });
 });
