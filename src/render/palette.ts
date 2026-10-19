@@ -28,6 +28,8 @@ export const COLORS = {
   aimCancel: '#9e9e9e',
   flag: '#e8443a',
   flagPole: '#f4efe1',
+  // The onboarding demo fingertip and its press ring.
+  ghostHand: '#ffffff',
 } as const;
 
 /**
