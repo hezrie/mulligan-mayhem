@@ -6,6 +6,8 @@ import type { Shot } from '../core/game/shot.ts';
 import { advanceClock } from '../core/physics/timestep.ts';
 import { attachAimInput } from '../input/pointer.ts';
 import { createRenderer, type Renderer } from '../render/renderer.ts';
+import { createBrowserSoundscape, type BrowserSoundscape } from '../ui/audio/browser.ts';
+import type { SoundTrigger } from '../ui/audio/cues.ts';
 import { createCompleteScreen } from '../ui/complete-screen.ts';
 import { createHud } from '../ui/hud.ts';
 import { createShell } from '../ui/shell.ts';
@@ -20,6 +22,9 @@ export interface AppHandles {
   readonly shoot: (shot: Shot) => void;
   /** Hears every accepted shot with the step it was taken at; returns an unsubscribe. */
   readonly onShot: (listener: ShotListener) => () => void;
+  /** Sounds a trigger at the session's current step; the test API forwards its shots and events. */
+  readonly hear: (trigger: SoundTrigger) => void;
+  readonly audio: Pick<BrowserSoundscape, 'cueLog' | 'debugState'>;
 }
 
 export type ShotListener = (shot: Shot, step: number) => void;
@@ -30,6 +35,10 @@ export function startApp(app: HTMLElement, canvas: HTMLCanvasElement): AppHandle
   let aim: Shot | null = null;
   let manualClock = false;
   const shotListeners = new Set<ShotListener>();
+  const { soundscape, cueLog, debugState } = createBrowserSoundscape(window);
+  const hear = (trigger: SoundTrigger): void => {
+    soundscape.handle(trigger, { step: session.state.step, par: session.course.hole.par });
+  };
   const shoot = (shot: Shot): void => {
     session.shoot(shot);
     for (const listener of shotListeners) listener(shot, session.state.step);
@@ -41,7 +50,11 @@ export function startApp(app: HTMLElement, canvas: HTMLCanvasElement): AppHandle
     onAimChange: (shot) => {
       aim = shot;
     },
-    onShoot: shoot,
+    // The putt is sounded here, not in shoot(): the test API sounds its own shots via onShot.
+    onShoot: (shot) => {
+      shoot(shot);
+      hear({ type: 'shot', power: shot.power });
+    },
   });
 
   const restart = (): void => {
@@ -58,7 +71,8 @@ export function startApp(app: HTMLElement, canvas: HTMLCanvasElement): AppHandle
     const clock = advanceClock(accumulator, (now - last) / 1000);
     last = now;
     accumulator = clock.accumulator;
-    if (!manualClock) session.advance(clock.steps);
+    // One step at a time, so each sound is stamped with the step that produced it.
+    if (!manualClock) for (let i = 0; i < clock.steps; i++) session.advance(1).forEach(hear);
     renderer.draw(session.course, session.state, aim, {
       nowMs: now,
       events: session.drainEvents(),
@@ -80,5 +94,7 @@ export function startApp(app: HTMLElement, canvas: HTMLCanvasElement): AppHandle
       shotListeners.add(listener);
       return () => shotListeners.delete(listener);
     },
+    hear,
+    audio: { cueLog, debugState },
   };
 }

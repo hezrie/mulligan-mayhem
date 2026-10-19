@@ -18,6 +18,11 @@ if (__TEST_API__) {
       shoot: app.shoot,
       worldToClient: (p) => app.renderer.worldToClient(p),
       fxSnapshot: () => app.renderer.fxSnapshot(),
+      onShot: (shot) => {
+        app.hear({ type: 'shot', power: shot.power });
+      },
+      onEvent: app.hear,
+      audio: app.audio,
     }),
   );
 }
