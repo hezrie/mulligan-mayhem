@@ -1,10 +1,9 @@
 import type { Hole } from '../core/course/schema.ts';
-import type { GameEvent } from '../core/game/machine.ts';
-import { isResolvingShot, type GameSession } from '../core/game/session.ts';
+import type { GameSession, SessionEventListener } from '../core/game/session.ts';
 import type { Shot } from '../core/game/shot.ts';
 import { hashState } from '../core/hash.ts';
 import type { Vec2 } from '../core/math/vec2.ts';
-import { DT, HAZARD_PAUSE_STEPS, MAX_ROLL_STEPS } from '../core/physics/constants.ts';
+import { DT } from '../core/physics/constants.ts';
 import type { AudioDebugState, CueEntry, FxSnapshot, MulliganTestApi } from './types.ts';
 
 export interface TestApiDeps {
@@ -15,10 +14,12 @@ export interface TestApiDeps {
   worldToClient(p: Vec2): Vec2;
   /** The renderer's current effects state; read fresh on every getFx() call. */
   fxSnapshot?: () => FxSnapshot;
-  /** Called after every accepted shot, because shoot() bypasses the app's own input path. */
+  /** The app's shot path (AppHandles.shoot), shared with pointer input; defaults to the session. */
+  shoot?: (shot: Shot) => void;
+  /** Called after every accepted shot, with the step it was taken at. */
   onShot?: (shot: Shot, step: number) => void;
   /** Called for every event fastForward produces, with the step of the tick that produced it. */
-  onEvent?: (event: GameEvent, step: number) => void;
+  onEvent?: SessionEventListener;
   readonly audio?: {
     readonly cueLog: { entries(): readonly CueEntry[]; clear(): void };
     debugState(): AudioDebugState;
@@ -33,10 +34,11 @@ export interface TestApiHost {
 /** Installs `__MM__` on the host. Only ever called from main.ts behind `__TEST_API__`. */
 export function installTestApi(host: TestApiHost, deps: TestApiDeps): MulliganTestApi {
   const { session } = deps;
-  // One tick at a time, so every event reaches onEvent with the step that produced it.
-  const tick = (): void => {
-    for (const e of session.advance(1)) deps.onEvent?.(e, session.state.step);
-  };
+  const shoot =
+    deps.shoot ??
+    ((shot: Shot) => {
+      session.shoot(shot);
+    });
   const api: MulliganTestApi = {
     ready: true,
     loadHole(id, seed = 1) {
@@ -46,21 +48,13 @@ export function installTestApi(host: TestApiHost, deps: TestApiDeps): MulliganTe
     },
     shoot(angle, power) {
       const shot = { angle, power };
-      session.shoot(shot);
+      shoot(shot);
       deps.onShot?.(shot, session.state.step);
     },
     fastForward(duration) {
-      if (duration === 'untilRest') {
-        // Mirrors GameSession.runUntilRest tick for tick; calling it would lose the events.
-        let steps = 0;
-        while (isResolvingShot(session.state) && steps <= MAX_ROLL_STEPS + HAZARD_PAUSE_STEPS) {
-          tick();
-          steps++;
-        }
-        return steps;
-      }
+      if (duration === 'untilRest') return session.runUntilRest(deps.onEvent);
       const steps = Math.round(duration / 1000 / DT);
-      for (let i = 0; i < steps; i++) tick();
+      session.advance(steps, deps.onEvent);
       return steps;
     },
     getState: () => structuredClone(session.state),

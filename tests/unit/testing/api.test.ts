@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { getHole } from '../../../src/core/course/holes/index.ts';
 import { ShotRejectedError, type GameEvent } from '../../../src/core/game/machine.ts';
 import { ReplayFileSchema, type ReplayFile } from '../../../src/core/game/replay.ts';
@@ -222,6 +222,48 @@ describe('window.__MM__ test API: shot and event forwarding', () => {
       expect(api.fastForward('untilRest')).toBe(twin.runUntilRest());
       expect(api.getStateHash()).toBe(hashState(twin.state));
     }
+  });
+
+  it('fastForward(untilRest) delegates to session.runUntilRest', () => {
+    const session = new GameSession(getHole('skeleton-01'), 1);
+    const events: GameEvent[] = [];
+    const onEvent = (e: GameEvent): void => {
+      events.push(e);
+    };
+    const api = installTestApi(
+      {},
+      { session, getHole, useManualClock: () => undefined, worldToClient: (p) => p, onEvent },
+    );
+    const spy = vi.spyOn(session, 'runUntilRest');
+    api.shoot(-2.481, 0.925);
+    expect(api.fastForward('untilRest')).toBe(151);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith(onEvent);
+    expect(events.map((e) => e.type)).toEqual(['bounce', 'cup', 'holed']);
+  });
+
+  it('shoot goes through the app handle', () => {
+    const session = new GameSession(getHole('skeleton-01'), 1);
+    const handled: Shot[] = [];
+    const shots: Shot[] = [];
+    const api = installTestApi(
+      {},
+      {
+        session,
+        getHole,
+        useManualClock: () => undefined,
+        worldToClient: (p) => p,
+        shoot: (shot) => {
+          handled.push(shot);
+          session.shoot(shot);
+        },
+        onShot: (shot) => shots.push(shot),
+      },
+    );
+    api.shoot(0.25, 0.5);
+    expect(handled).toEqual([{ angle: 0.25, power: 0.5 }]);
+    expect(shots).toEqual([{ angle: 0.25, power: 0.5 }]);
+    expect(session.state.phase).toBe('rolling');
   });
 
   it('fastForward(500) still runs 60 steps', () => {
