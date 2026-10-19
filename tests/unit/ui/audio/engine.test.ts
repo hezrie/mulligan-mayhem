@@ -193,3 +193,51 @@ describe('createAudioEngine visibility', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
 });
+
+describe('createAudioEngine volume and mute', () => {
+  it.each([
+    [70, 0.7],
+    [33, 0.3],
+    [35, 0.4],
+    [140, 1.0],
+    [-5, 0],
+    [Number.NaN, 0.7],
+  ])('setVolume(%s) sets the master target to %s', (volume, expected) => {
+    const { engine } = setup();
+    engine.setVolume(20);
+    engine.setVolume(volume);
+    expect(engine.levels().master).toBe(expected);
+  });
+
+  it('starts at master 0.7 and sfx 1, and setSfxEnabled toggles the sfx bus 0 / 1', () => {
+    const { engine } = setup();
+    expect(engine.levels()).toEqual({ master: 0.7, sfx: 1 });
+    engine.setSfxEnabled(false);
+    expect(engine.levels()).toEqual({ master: 0.7, sfx: 0 });
+    engine.setSfxEnabled(true);
+    expect(engine.levels()).toEqual({ master: 0.7, sfx: 1 });
+  });
+
+  it('reports levels set while locked, and applies them when the context is created', () => {
+    const { ctx, engine, createContext, fire } = setup();
+    engine.setVolume(35);
+    engine.setSfxEnabled(false);
+    expect(engine.levels()).toEqual({ master: 0.4, sfx: 0 });
+    expect(createContext).toHaveBeenCalledTimes(0);
+    fire('pointerdown');
+    const [sfx, master] = gains(ctx);
+    expect(master?.gain.value).toBe(0.4);
+    expect(sfx?.gain.value).toBe(0);
+  });
+
+  it('applies changes made after unlock to the live gains', () => {
+    const { ctx, engine, fire } = setup();
+    fire('pointerdown');
+    engine.setVolume(140);
+    engine.setSfxEnabled(false);
+    const [sfx, master] = gains(ctx);
+    expect(master?.gain.value).toBe(1.0);
+    expect(sfx?.gain.value).toBe(0);
+    expect(engine.levels()).toEqual({ master: 1.0, sfx: 0 });
+  });
+});

@@ -2,6 +2,7 @@ import type { AudioContextLike } from './context.ts';
 import { createCueLog, createSoundscape, type CueLog, type Soundscape } from './cues.ts';
 import {
   createAudioEngine,
+  type AudioEngine,
   type AudioEngineState,
   type ListenerTarget,
   type VisibilitySource,
@@ -28,7 +29,13 @@ export interface BrowserSoundscape {
   readonly soundscape: Soundscape;
   readonly cueLog: CueLog;
   readonly haptics: Haptics;
-  readonly debugState: () => { readonly engine: AudioEngineState };
+  /** Exposed so saved sound settings can be bound to it (see sound-settings.ts). */
+  readonly engine: AudioEngine;
+  readonly debugState: () => {
+    readonly engine: AudioEngineState;
+    readonly masterGain: number;
+    readonly sfxGain: number;
+  };
 }
 
 const ARM_OPTIONS = { capture: true } as const;
@@ -67,6 +74,10 @@ export function createBrowserSoundscape(win: SoundWindow): BrowserSoundscape {
     soundscape: createSoundscape({ engine, log: cueLog, haptics }),
     cueLog,
     haptics,
-    debugState: () => ({ engine: engine.state() }),
+    engine,
+    debugState() {
+      const { master, sfx } = engine.levels();
+      return { engine: engine.state(), masterGain: master, sfxGain: sfx };
+    },
   };
 }

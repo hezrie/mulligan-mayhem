@@ -42,11 +42,20 @@ describe('createBrowserSoundscape', () => {
     });
     const { debugState } = createBrowserSoundscape(win);
     expect(made).toHaveLength(0);
-    expect(debugState()).toEqual({ engine: 'locked' });
+    expect(debugState()).toEqual({ engine: 'locked', masterGain: 0.7, sfxGain: 1 });
     win.dispatchEvent(new Event('pointerdown'));
     win.dispatchEvent(new Event('pointerdown'));
     expect(made).toHaveLength(1);
-    expect(debugState()).toEqual({ engine: 'running' });
+    expect(debugState()).toEqual({ engine: 'running', masterGain: 0.7, sfxGain: 1 });
+  });
+
+  it('returns the engine, and debugState reports its gain levels', () => {
+    const win = Object.assign(new EventTarget(), { document: fakeDocument() });
+    const { engine, debugState } = createBrowserSoundscape(win);
+    expect(debugState()).toEqual({ engine: 'locked', masterGain: 0.7, sfxGain: 1 });
+    engine.setVolume(35);
+    engine.setSfxEnabled(false);
+    expect(debugState()).toEqual({ engine: 'locked', masterGain: 0.4, sfxGain: 0 });
   });
 
   it('falls back to webkitAudioContext', () => {
