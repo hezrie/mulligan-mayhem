@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { MIN_SHOT_POWER } from '../../../src/core/game/shot.ts';
-import { vec2 } from '../../../src/core/math/vec2.ts';
+import { add, vec2 } from '../../../src/core/math/vec2.ts';
+import { Rng } from '../../../src/core/rng.ts';
 import {
   aimFromDrag,
+  aimFromRelativeDrag,
   canGrab,
   GRAB_RADIUS,
   isCancel,
@@ -39,5 +41,39 @@ describe('aimFromDrag (slingshot)', () => {
     expect(shot.power).toBeLessThan(MIN_SHOT_POWER);
     expect(isCancel(shot)).toBe(true);
     expect(isCancel(aimFromDrag(ball, vec2(100, 160)))).toBe(false);
+  });
+});
+
+describe('aimFromRelativeDrag (drag anywhere)', () => {
+  const start = vec2(100, 100);
+
+  it('measures the drag from where the press started: 90 down aims up at 90/MAX_DRAG power', () => {
+    const shot = aimFromRelativeDrag(start, vec2(100, 190));
+    expect(shot.angle).toBeCloseTo(-Math.PI / 2, 12);
+    expect(shot.power).toBe(90 / MAX_DRAG);
+    expect(shot.power).toBe(0.5625);
+  });
+
+  it('caps power at 1 for a pointer 400 units away', () => {
+    expect(aimFromRelativeDrag(start, vec2(100, 500)).power).toBe(1);
+  });
+
+  it('treats a release where the press started as a cancel', () => {
+    const shot = aimFromRelativeDrag(start, vec2(100, 100));
+    expect(shot.power).toBe(0);
+    expect(isCancel(shot)).toBe(true);
+  });
+
+  it('matches aimFromDrag exactly for the same drag offset (50 seeded cases)', () => {
+    const rng = new Rng(7);
+    for (let i = 0; i < 50; i++) {
+      const from = vec2(rng.int(0, 400), rng.int(0, 400));
+      const ballPos = vec2(rng.int(0, 400), rng.int(0, 400));
+      const d = vec2(rng.int(-200, 200), rng.int(-200, 200));
+      const relative = aimFromRelativeDrag(from, add(from, d));
+      const grabbed = aimFromDrag(ballPos, add(ballPos, d));
+      expect(relative.angle).toBe(grabbed.angle);
+      expect(relative.power).toBe(grabbed.power);
+    }
   });
 });

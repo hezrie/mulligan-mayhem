@@ -23,6 +23,14 @@ export function aimFromDrag(ball: Vec2, pointer: Vec2): Shot {
   };
 }
 
+/**
+ * 'Drag anywhere' aiming: the same slingshot maths, measured from where the press started
+ * instead of from the ball, so a finger never has to cover the ball.
+ */
+export function aimFromRelativeDrag(start: Vec2, pointer: Vec2): Shot {
+  return aimFromDrag(start, pointer);
+}
+
 export function isCancel(shot: Shot): boolean {
   return shot.power < MIN_SHOT_POWER;
 }
