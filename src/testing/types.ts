@@ -24,7 +24,29 @@ export interface MulliganTestApi {
   clearCueLog(): void;
   /** The audio engine's debug state; `{ engine: 'absent' }` until wired. */
   getAudioState(): AudioDebugState;
+  /** The current screen id; 'play' until a screen router is wired, since the root boots into play. */
+  getScreen(): string;
+  /** Opens a screen. Without a router only 'play' exists, so any other id throws. */
+  goTo(id: string): void;
+  /** Writes every entry to storage, e.g. before page.reload() to boot from a known profile. */
+  seedStorage(entries: Record<string, string>): void;
+  /** A plain object of every stored key that starts with `prefix`. */
+  readStorage(prefix?: string): Record<string, string>;
+  /** Removes only the stored keys that start with `prefix`. */
+  clearStorage(prefix?: string): void;
 }
+
+/** What a screen router offers the test API; the front-door router implements it. */
+export interface ScreenControl {
+  current(): string;
+  goTo(id: string): void;
+}
+
+/** The slice of the Web Storage API the test API uses; window.localStorage satisfies it. */
+export type KeyValueStorage = Pick<
+  Storage,
+  'length' | 'key' | 'getItem' | 'setItem' | 'removeItem'
+>;
 
 /** One fired sound cue, tagged with the simulation step it fired on. */
 export interface CueEntry {
