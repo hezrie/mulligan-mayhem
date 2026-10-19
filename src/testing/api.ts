@@ -1,10 +1,10 @@
 import type { Hole } from '../core/course/schema.ts';
 import type { GameEvent } from '../core/game/machine.ts';
-import type { GameSession } from '../core/game/session.ts';
+import { isResolvingShot, type GameSession } from '../core/game/session.ts';
 import type { Shot } from '../core/game/shot.ts';
 import { hashState } from '../core/hash.ts';
 import type { Vec2 } from '../core/math/vec2.ts';
-import { DT, MAX_ROLL_STEPS } from '../core/physics/constants.ts';
+import { DT, HAZARD_PAUSE_STEPS, MAX_ROLL_STEPS } from '../core/physics/constants.ts';
 import type { AudioDebugState, CueEntry, FxSnapshot, MulliganTestApi } from './types.ts';
 
 export interface TestApiDeps {
@@ -53,7 +53,7 @@ export function installTestApi(host: TestApiHost, deps: TestApiDeps): MulliganTe
       if (duration === 'untilRest') {
         // Mirrors GameSession.runUntilRest tick for tick; calling it would lose the events.
         let steps = 0;
-        while (session.state.phase === 'rolling' && steps <= MAX_ROLL_STEPS) {
+        while (isResolvingShot(session.state) && steps <= MAX_ROLL_STEPS + HAZARD_PAUSE_STEPS) {
           tick();
           steps++;
         }

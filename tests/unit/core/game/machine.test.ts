@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { createGame, shoot, ShotRejectedError, tick } from '../../../../src/core/game/machine.ts';
 import type { GameState } from '../../../../src/core/game/state.ts';
-import { MAX_ROLL_STEPS, MAX_SHOT_SPEED } from '../../../../src/core/physics/constants.ts';
+import {
+  DT,
+  HAZARD_PAUSE_STEPS,
+  MAX_ROLL_STEPS,
+  MAX_SHOT_SPEED,
+} from '../../../../src/core/physics/constants.ts';
 import { seedState } from '../../../../src/core/rng.ts';
 import { vec2, ZERO } from '../../../../src/core/math/vec2.ts';
 import { makeCourse } from '../../../helpers/holes.ts';
@@ -116,5 +121,70 @@ describe('tick', () => {
     expect(state.phase).toBe('aiming');
     expect(state.ball.vel).toEqual(ZERO);
     expect(events).toContainEqual({ type: 'rest', forced: true });
+  });
+});
+
+describe('water hazard', () => {
+  /** A water band across the box between the tee (y 350) and the cup (y 50). */
+  const pond = makeCourse({
+    terrain: {
+      base: 'fairway',
+      zones: [
+        { kind: 'water', polygon: [vec2(0, 180), vec2(400, 180), vec2(400, 240), vec2(0, 240)] },
+      ],
+    },
+  });
+  // From a resting spot at (200,300), a shot straight up reaches the water within a few steps.
+  const rested: GameState = {
+    ...createGame(pond, 1),
+    ball: { pos: vec2(200, 300), vel: ZERO },
+    lastRest: vec2(200, 300),
+    strokes: 2,
+  };
+
+  function rollIntoWater(): GameState {
+    let s = shoot(rested, { angle: UP, power: 0.5 });
+    for (let i = 0; i <= MAX_ROLL_STEPS && s.phase === 'rolling'; i++) s = tick(s, pond).state;
+    return s;
+  }
+
+  it('HAZARD_PAUSE_STEPS is 60 (0.5 s)', () => {
+    expect(HAZARD_PAUSE_STEPS).toBe(60);
+    expect(HAZARD_PAUSE_STEPS * DT).toBeCloseTo(0.5, 12);
+  });
+
+  it('rolling into water enters the hazard phase', () => {
+    const s = rollIntoWater();
+    expect(s.phase).toBe('hazard');
+    expect(s.ball.vel).toEqual(ZERO);
+    expect(s.ball.pos.y).toBeLessThan(240);
+    expect(s.ball.pos.y).toBeGreaterThan(180);
+    expect(s.strokes).toBe(3);
+  });
+
+  it('stays in hazard for exactly HAZARD_PAUSE_STEPS steps', () => {
+    let s = rollIntoWater();
+    for (let i = 0; i < HAZARD_PAUSE_STEPS - 1; i++) s = tick(s, pond).state;
+    expect(s.phase).toBe('hazard');
+    s = tick(s, pond).state;
+    expect(s.phase).toBe('aiming');
+  });
+
+  it('after the pause the ball is at lastRest with zero velocity and one penalty stroke', () => {
+    let s = rollIntoWater();
+    const entered = s.step;
+    for (let i = 0; i < HAZARD_PAUSE_STEPS; i++) s = tick(s, pond).state;
+    expect(s.phase).toBe('aiming');
+    expect(s.ball).toEqual({ pos: vec2(200, 300), vel: ZERO });
+    expect(s.lastRest).toEqual(vec2(200, 300));
+    expect(s.strokes).toBe(4);
+    expect(s.rollSteps).toBe(0);
+    expect(s.step).toBe(entered + HAZARD_PAUSE_STEPS);
+  });
+
+  it('rejects a shot during the hazard phase', () => {
+    const s = rollIntoWater();
+    expect(s.phase).toBe('hazard');
+    expect(() => shoot(s, { angle: UP, power: 0.5 })).toThrow(ShotRejectedError);
   });
 });

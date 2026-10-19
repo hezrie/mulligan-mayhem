@@ -11,6 +11,12 @@ describe('hashState', () => {
     expect(hashState(base)).toBe(hashState({ ...base }));
   });
 
+  it('hazard hashes differently from aiming and rolling', () => {
+    const hazard = hashState({ ...base, phase: 'hazard' });
+    expect(hazard).not.toBe(hashState({ ...base, phase: 'aiming' }));
+    expect(hazard).not.toBe(hashState({ ...base, phase: 'rolling' }));
+  });
+
   it.each([
     ['holeId', { holeId: 'other' }],
     ['phase', { phase: 'rolling' as const }],

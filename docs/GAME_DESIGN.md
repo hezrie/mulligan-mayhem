@@ -40,7 +40,7 @@ a par 2 is a birdie (🟩).
 | Rough   | More friction than fairway                                 | ✅ shipped  |
 | Sand    | High friction                                              | ✅ shipped  |
 | Ice     | Low friction                                               | ✅ shipped  |
-| Water   | +1 penalty stroke; ball resets to its last resting spot    | backlog     |
+| Water   | +1 penalty stroke; ball resets to its last resting spot    | ✅ shipped  |
 | Slope   | Constant force in one direction while on it                | backlog     |
 | Walls   | Static line segments; ball bounces with some energy loss   | ✅ skeleton |
 | Bumpers | Bouncier obstacles (round or segment)                      | backlog     |
