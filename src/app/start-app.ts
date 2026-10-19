@@ -10,7 +10,9 @@ import type { SoundTrigger } from '../ui/audio/cues.ts';
 import { createPacer, type Pacer } from '../ui/bullet-time.ts';
 import { createCompleteScreen } from '../ui/complete-screen.ts';
 import { createHud } from '../ui/hud.ts';
+import { createSettingsStore } from '../ui/settings-store.ts';
 import { createShell } from '../ui/shell.ts';
+import { getBrowserStorage } from '../ui/storage.ts';
 
 /** What main.ts hands to the dev/test-only test API. */
 export interface AppHandles {
@@ -37,6 +39,8 @@ export function startApp(app: HTMLElement, canvas: HTMLCanvasElement): AppHandle
   let aim: Shot | null = null;
   let manualClock = false;
   const shotListeners = new Set<ShotListener>();
+  // The page's one settings store; the settings screen must reuse it, never create another.
+  const settings = createSettingsStore(getBrowserStorage(window));
   const { soundscape, cueLog, debugState } = createBrowserSoundscape(window);
   const hear = (trigger: SoundTrigger): void => {
     soundscape.handle(trigger, { step: session.state.step, par: session.course.hole.par });
@@ -49,6 +53,7 @@ export function startApp(app: HTMLElement, canvas: HTMLCanvasElement): AppHandle
   attachAimInput(canvas, {
     toWorld: (x, y) => renderer.clientToWorld(x, y),
     ballIfAiming: () => (session.state.phase === 'aiming' ? session.state.ball.pos : null),
+    aimMode: () => settings.get().aimMode,
     onAimChange: (shot) => {
       aim = shot;
     },

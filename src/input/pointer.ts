@@ -1,6 +1,7 @@
+import type { AimMode } from '../core/game/settings.ts';
 import type { Shot } from '../core/game/shot.ts';
 import type { Vec2 } from '../core/math/vec2.ts';
-import { aimFromDrag, canGrab, isCancel } from './drag-to-shot.ts';
+import { aimFromDrag, aimFromRelativeDrag, canGrab, isCancel } from './drag-to-shot.ts';
 
 export interface AimInputOptions {
   /** Converts client (CSS pixel) coordinates to world coordinates. */
@@ -10,26 +11,36 @@ export interface AimInputOptions {
   /** Live aim preview while dragging; null when the aim ends or is cancelled. */
   onAimChange(shot: Shot | null): void;
   onShoot(shot: Shot): void;
+  /** Read at every press, so a settings change applies to the next drag. Defaults to 'grab'. */
+  aimMode?(): AimMode;
 }
 
 /** Pointer events cover mouse, touch and pen. Returns a function that detaches the listeners. */
 export function attachAimInput(el: HTMLElement, opts: AimInputOptions): () => void {
   let activePointer: number | null = null;
+  // Where a 'Drag anywhere' press started; null while grabbing the ball.
+  let anchor: Vec2 | null = null;
 
   const aimAt = (e: PointerEvent): Shot | null => {
     const ball = opts.ballIfAiming();
-    return ball ? aimFromDrag(ball, opts.toWorld(e.clientX, e.clientY)) : null;
+    if (!ball) return null;
+    const pointer = opts.toWorld(e.clientX, e.clientY);
+    return anchor ? aimFromRelativeDrag(anchor, pointer) : aimFromDrag(ball, pointer);
   };
 
   const end = (): void => {
     activePointer = null;
+    anchor = null;
     opts.onAimChange(null);
   };
 
   const onDown = (e: PointerEvent): void => {
     const ball = opts.ballIfAiming();
     if (activePointer !== null || !ball) return;
-    if (!canGrab(ball, opts.toWorld(e.clientX, e.clientY))) return;
+    const pointer = opts.toWorld(e.clientX, e.clientY);
+    const anywhere = (opts.aimMode?.() ?? 'grab') === 'anywhere';
+    if (!anywhere && !canGrab(ball, pointer)) return;
+    anchor = anywhere ? pointer : null;
     activePointer = e.pointerId;
     el.setPointerCapture(e.pointerId);
     e.preventDefault();
