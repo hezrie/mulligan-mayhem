@@ -28,12 +28,12 @@ src/core/     pure TS, deterministic. Imports only src/core and zod. No DOM, Dat
   rng.ts      seeded PRNG — the ONLY source of randomness
   physics/    fixed-step simulation (dt = 1/120 s), collisions, terrain friction, rest detection
   course/     hole schemas (zod) + holes as JSON data
-  game/       state machine (aiming → rolling → aiming | holed) + GameSession
+  game/       state machine (aiming → rolling → hazard → aiming | holed) + GameSession
   scoring/    strokes, par, score names
   hash.ts     stable state hash (replays + determinism tests)
 src/input/    pointer/touch → Shot { angle, power 0..1 }      (may import core only)
 src/render/   canvas renderer; reads state, never mutates it  (may import core only)
-src/ui/       DOM HUD, menus, hole-complete screen            (may import core only)
+src/ui/       DOM HUD, router + screens, audio, complete screen (may import core only)
 src/testing/  window.__MM__ test API, dev/test builds only    (may import core only)
 src/app/      composition root: creates the layers, wires them, runs the loop (imports core/input/render/ui)
 src/main.ts   boot only: starts src/app (+ the test API in dev/test builds); ≤40 lines, enforced
@@ -61,7 +61,8 @@ physics and IEEE-exact math: [docs/decisions/0001-custom-deterministic-physics.m
 - Named exports only. File names in kebab-case. Imports use explicit `.ts` extensions.
 - Units: world units (1 unit = 1 CSS px at scale 1), seconds, radians. Screen y points down;
   angle 0 = +x, π/2 = +y (down the screen). Shot power is normalized 0..1.
-- Tuning constants live in one place (`src/core/physics/constants.ts`), named and commented.
+- Tuning constants are named and commented, never magic numbers: physics in `src/core/physics/constants.ts`;
+  render and audio constants at the top of the module that owns them.
 - Comments explain _why_, not _what_. Keep functions small; prefer clarity over cleverness.
 - Conventional commits: `feat(physics): add sand friction (#12)`. Branch: `agent/<issue>-<slug>`.
 
