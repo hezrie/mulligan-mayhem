@@ -38,3 +38,16 @@ Prefer lessons that can become enforced checks. When a lesson gains enforcement,
 - Rule: before planning or implementing, search docs/GAME_DESIGN.md → Product decisions for the ticket number
   and its epic, and follow every decision found. Reviewers check the diff against those decisions.
 - Enforced by: prose only (planner, worker and reviewer)
+
+### L-003: Check the ticket's claims about existing code against main before writing tests
+
+- Seen in: #59, #69 (2026-10-19)
+- What went wrong: #59 required `TERRAIN_PARTICLES` to equal a literal object keyed by `TerrainKind`, but `water`
+  (added in #10) is also a `TerrainKind`. #69 assumed settings already had `sfxOn`/`sfxVolume` and no sound controls
+  on the Settings screen, but main has a single `volume` field and a Volume slider. Both were found only after the
+  worker started and ended in escalation.
+- Rule: before the first test, grep main for every existing symbol, field, union and screen the criteria mention
+  and compare it with the ticket's description (e.g. the members of `TERRAIN_KINDS`, the fields of `Settings`). If
+  one differs, or a prerequisite ticket isn't merged, escalate with the exact mismatch. The refiner does the same
+  check before marking a ticket ready.
+- Enforced by: prose only (refiner and worker)
