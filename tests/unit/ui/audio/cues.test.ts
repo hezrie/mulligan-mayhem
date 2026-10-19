@@ -5,6 +5,7 @@ import {
   type CueLogEntry,
   type SoundTrigger,
 } from '../../../../src/ui/audio/cues.ts';
+import { createHaptics, hapticFor } from '../../../../src/ui/audio/haptics.ts';
 import { voiceFor, type Voice } from '../../../../src/ui/audio/voices.ts';
 
 const PAR = 3;
@@ -64,6 +65,14 @@ describe('createSoundscape bounce cooldown', () => {
     expect(play).toHaveBeenCalledTimes(2);
   });
 
+  it('restarts the cooldown when the step goes back, as on a reloaded hole', () => {
+    const { play, log, at } = setup();
+    at(55, { type: 'bounce', impulse: 800 });
+    at(46, { type: 'bounce', impulse: 750 });
+    expect(log.entries()).toEqual([sfx('bounce', 55), sfx('bounce', 46)]);
+    expect(play).toHaveBeenCalledTimes(2);
+  });
+
   it('ignores soft bounces without restarting the cooldown', () => {
     const { play, log, at } = setup();
     at(10, { type: 'bounce', impulse: 100 });
@@ -72,6 +81,60 @@ describe('createSoundscape bounce cooldown', () => {
     at(14, { type: 'bounce', impulse: 29.9 });
     expect(log.entries()).toEqual([sfx('bounce', 10), sfx('bounce', 13)]);
     expect(play).toHaveBeenCalledTimes(2);
+  });
+});
+
+function hapticSetup() {
+  const vibrate = vi.fn<(pattern: VibratePattern) => boolean>(() => true);
+  const haptics = createHaptics({ vibrate });
+  haptics.arm();
+  const engine = { play: () => true, now: () => 0 };
+  const soundscape = createSoundscape({ engine, log: createCueLog(), haptics });
+  const at = (step: number, trigger: SoundTrigger): void => {
+    soundscape.handle(trigger, { step, par: PAR });
+  };
+  const pulses = (): unknown[] => vibrate.mock.calls.map(([pattern]) => pattern);
+  return { at, pulses };
+}
+
+describe('createSoundscape haptics', () => {
+  it('pulses the putt, the bounce and the hole-in-one pattern for a one-putt hole', () => {
+    const { at, pulses } = hapticSetup();
+    at(0, { type: 'shot', power: 0.925 });
+    at(55, { type: 'bounce', impulse: 817.266 });
+    at(151, { type: 'cup' });
+    at(151, { type: 'holed', strokes: 1 });
+    expect(pulses()).toEqual([24, 25, [30, 60, 30, 60, 120]]);
+  });
+
+  it('pulses the putt and bounce patterns from hapticFor', () => {
+    const { at, pulses } = hapticSetup();
+    at(0, { type: 'shot', power: 0.3 });
+    at(10, { type: 'bounce', impulse: 200 });
+    expect(pulses()).toEqual([
+      hapticFor({ type: 'putt', power: 0.3 }),
+      hapticFor({ type: 'bounce', impulse: 200 }),
+    ]);
+  });
+
+  it('pulses only bounces that survive the cooldown', () => {
+    const { at, pulses } = hapticSetup();
+    for (const step of [10, 11, 12, 13]) at(step, { type: 'bounce', impulse: 500 });
+    expect(pulses()).toEqual([25, 25]);
+  });
+
+  it('pulses only the cup pattern when holed in more than one stroke', () => {
+    const { at, pulses } = hapticSetup();
+    at(294, { type: 'holed', strokes: 3 });
+    expect(pulses()).toEqual([[15, 40, 30]]);
+  });
+
+  it('pulses nothing for cup or rest', () => {
+    const { at, pulses } = hapticSetup();
+    at(1, { type: 'cup' });
+    at(2, { type: 'rest', forced: false });
+    at(3, { type: 'rest', forced: true });
+    expect(pulses()).toEqual([]);
   });
 });
 
