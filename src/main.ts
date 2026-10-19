@@ -15,6 +15,7 @@ if (__TEST_API__) {
       session: app.session,
       getHole,
       useManualClock: app.useManualClock,
+      shoot: app.shoot,
       worldToClient: (p) => app.renderer.worldToClient(p),
       fxSnapshot: () => app.renderer.fxSnapshot(),
     }),

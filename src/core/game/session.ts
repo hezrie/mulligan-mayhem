@@ -13,6 +13,9 @@ export function isResolvingShot(state: GameState): boolean {
 /** Cap on undrained events, so a session nobody drains (e.g. the replay runner) stays bounded. */
 export const MAX_PENDING_EVENTS = 1024;
 
+/** Hears each physics event as it happens, with the step of the tick that produced it. */
+export type SessionEventListener = (event: GameEvent, step: number) => void;
+
 /**
  * A small mutable holder around the pure state machine, shared by the render loop, the test
  * API and the replay runner, so they all step the game the same way.
@@ -54,24 +57,17 @@ export class GameSession {
     this.#state = shoot(this.#state, shot);
   }
 
-  advance(steps: number): GameEvent[] {
+  advance(steps: number, onEvent?: SessionEventListener): GameEvent[] {
     const events: GameEvent[] = [];
-    for (let i = 0; i < steps; i++) {
-      const r = tick(this.#state, this.#course);
-      this.#state = r.state;
-      events.push(...r.events);
-    }
-    this.#record(events);
+    for (let i = 0; i < steps; i++) events.push(...this.#tick(onEvent));
     return events;
   }
 
   /** Steps until the ball stops, through any hazard pause. Always terminates. Returns steps run. */
-  runUntilRest(): number {
+  runUntilRest(onEvent?: SessionEventListener): number {
     let steps = 0;
     while (isResolvingShot(this.#state) && steps <= MAX_ROLL_STEPS + HAZARD_PAUSE_STEPS) {
-      const r = tick(this.#state, this.#course);
-      this.#state = r.state;
-      this.#record(r.events);
+      this.#tick(onEvent);
       steps++;
     }
     return steps;
@@ -82,6 +78,15 @@ export class GameSession {
     const events = this.#pending;
     this.#pending = [];
     return events;
+  }
+
+  // The one place the session steps the machine, so every caller sees the same events.
+  #tick(onEvent?: SessionEventListener): readonly GameEvent[] {
+    const r = tick(this.#state, this.#course);
+    this.#state = r.state;
+    this.#record(r.events);
+    for (const e of r.events) onEvent?.(e, r.state.step);
+    return r.events;
   }
 
   #record(events: readonly GameEvent[]): void {

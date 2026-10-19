@@ -16,13 +16,24 @@ export interface AppHandles {
   readonly renderer: Renderer;
   /** Stops the frame loop from advancing the simulation (tests drive it instead). */
   readonly useManualClock: () => void;
+  /** The one shot path: pointer input and `__MM__.shoot` both call it. Throws ShotRejectedError. */
+  readonly shoot: (shot: Shot) => void;
+  /** Hears every accepted shot with the step it was taken at; returns an unsubscribe. */
+  readonly onShot: (listener: ShotListener) => () => void;
 }
+
+export type ShotListener = (shot: Shot, step: number) => void;
 
 export function startApp(app: HTMLElement, canvas: HTMLCanvasElement): AppHandles {
   const session = new GameSession(getHole(DEFAULT_HOLE_ID), 1);
   const renderer = createRenderer(canvas);
   let aim: Shot | null = null;
   let manualClock = false;
+  const shotListeners = new Set<ShotListener>();
+  const shoot = (shot: Shot): void => {
+    session.shoot(shot);
+    for (const listener of shotListeners) listener(shot, session.state.step);
+  };
 
   attachAimInput(canvas, {
     toWorld: (x, y) => renderer.clientToWorld(x, y),
@@ -30,9 +41,7 @@ export function startApp(app: HTMLElement, canvas: HTMLCanvasElement): AppHandle
     onAimChange: (shot) => {
       aim = shot;
     },
-    onShoot: (shot) => {
-      session.shoot(shot);
-    },
+    onShoot: shoot,
   });
 
   const restart = (): void => {
@@ -65,6 +74,11 @@ export function startApp(app: HTMLElement, canvas: HTMLCanvasElement): AppHandle
     renderer,
     useManualClock: () => {
       manualClock = true;
+    },
+    shoot,
+    onShot: (listener) => {
+      shotListeners.add(listener);
+      return () => shotListeners.delete(listener);
     },
   };
 }

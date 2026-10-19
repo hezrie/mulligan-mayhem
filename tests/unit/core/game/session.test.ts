@@ -69,6 +69,27 @@ describe('GameSession', () => {
     expect(play()).toBe(play());
   });
 
+  it('reports each event with the step that produced it', () => {
+    const ACE = { angle: -2.481, power: 0.925 };
+    const viaAdvance: [string, number][] = [];
+    const a = new GameSession(getHole('skeleton-01'), 1);
+    a.shoot(ACE);
+    const returned = a.advance(200, (e, step) => viaAdvance.push([e.type, step]));
+    expect(viaAdvance).toEqual([
+      ['bounce', 55],
+      ['cup', 151],
+      ['holed', 151],
+    ]);
+    expect(returned.map((e) => e.type)).toEqual(['bounce', 'cup', 'holed']);
+
+    const viaRun: [string, number][] = [];
+    const b = new GameSession(getHole('skeleton-01'), 1);
+    b.shoot(ACE);
+    expect(b.runUntilRest((e, step) => viaRun.push([e.type, step]))).toBe(151);
+    expect(viaRun).toEqual(viaAdvance);
+    expect(b.drainEvents().map((e) => e.type)).toEqual(['bounce', 'cup', 'holed']);
+  });
+
   describe('drainEvents', () => {
     const skeleton = (): GameSession => new GameSession(getHole('skeleton-01'), 1);
     const BOUNCE_SHOT = { angle: -1.4, power: 0.7 };
