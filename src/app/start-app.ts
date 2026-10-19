@@ -70,9 +70,11 @@ export function startApp(app: HTMLElement, canvas: HTMLCanvasElement): AppHandle
     aim = null;
     session.reset();
   };
-  const hud = createHud(app, restart);
+  const shell = createShell(app, { window, settings, restart });
+  const hud = createHud(app, restart, () => {
+    shell.nav.open('pause');
+  });
   const complete = createCompleteScreen(app, restart);
-  createShell(app, { window, settings });
 
   // Real-time loop only: __MM__.fastForward calls session.advance directly, unpaced.
   const pacer = createPacer(() => true);
@@ -80,8 +82,10 @@ export function startApp(app: HTMLElement, canvas: HTMLCanvasElement): AppHandle
   function frame(now: number): void {
     const steps = pacer.steps(session.state, session.course.hole.cup, (now - last) / 1000);
     last = now;
+    // The pacer runs even while paused, so resuming never replays the paused time.
     // One step at a time, so each sound is stamped with the step that produced it.
-    if (!manualClock) for (let i = 0; i < steps; i++) session.advance(1).forEach(hear);
+    if (!manualClock && !shell.isPaused())
+      for (let i = 0; i < steps; i++) session.advance(1).forEach(hear);
     renderer.draw(session.course, session.state, aim, {
       nowMs: now,
       events: session.drainEvents(),

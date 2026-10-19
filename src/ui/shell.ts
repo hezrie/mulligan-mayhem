@@ -2,6 +2,7 @@ import { hashFor, INITIAL_ROUTE, route, topScreen } from './router.ts';
 import type { RouteAction, RouteState, ScreenId } from './router.ts';
 import type { Nav, Screen } from './screen.ts';
 import { createMenuScreen } from './screens/menu.ts';
+import { createPauseScreen } from './screens/pause.ts';
 import { createSettingsScreen } from './screens/settings.ts';
 import type { SettingsStore } from './settings-store.ts';
 
@@ -9,19 +10,28 @@ import type { SettingsStore } from './settings-store.ts';
 const SCREENS: Partial<Record<ScreenId, (nav: Nav, deps: ShellDeps) => Screen>> = {
   menu: createMenuScreen,
   settings: (nav, deps) => createSettingsScreen(nav, deps.settings),
+  pause: (nav, deps) => createPauseScreen(nav, deps.restart),
 };
 
 export interface ShellDeps {
   readonly window: Window;
   /** The page's one settings store; screens must reuse it, never create their own. */
   readonly settings: SettingsStore;
+  /** Restarts the current hole; the pause screen's Restart hole calls it. */
+  readonly restart: () => void;
+}
+
+export interface Shell {
+  readonly nav: Nav;
+  /** True whenever a screen covers play; the frame loop must not advance the simulation then. */
+  isPaused(): boolean;
 }
 
 /**
  * Keeps the route stack in step with the browser history and mounts the top screen. History
  * entries carry `{ mmStack, mmDepth }` so Back restores overlays and knows if it may leave the app.
  */
-export function createShell(app: HTMLElement, deps: ShellDeps): void {
+export function createShell(app: HTMLElement, deps: ShellDeps): Shell {
   const { history, location } = deps.window;
   const depth = (): number => {
     const raw: unknown = (history.state as { mmDepth?: unknown } | null)?.mmDepth;
@@ -90,4 +100,5 @@ export function createShell(app: HTMLElement, deps: ShellDeps): void {
 
   // Never rewrite the URL on boot: the root URL must stay hash-free and land in play.
   dispatch({ type: 'pop', historyState: history.state, hash: location.hash });
+  return { nav, isPaused: () => topScreen(state) !== 'play' };
 }
