@@ -272,4 +272,13 @@ describe('all workflows', () => {
       ]);
     }
   });
+
+  it('lets the worker Claude step accept runs the chain starts (github-actions[bot])', () => {
+    // Chain runs are dispatched with GITHUB_TOKEN; without this the action refuses them in a second.
+    const worker = workflows.find(([f]) => f === 'agent-worker.yml')?.[1];
+    const step = Object.values(worker?.jobs ?? {})
+      .flatMap((j) => j.steps ?? [])
+      .find(isClaude);
+    expect(String(step?.with?.['allowed_bots']).split(',')).toContain('github-actions');
+  });
 });
