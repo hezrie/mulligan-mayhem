@@ -125,21 +125,15 @@ export class FakeAudioContext implements AudioContextLike {
   failSuspend = false;
 
   createGain(): FakeGainNode {
-    const node = new FakeGainNode();
-    this.nodes.push({ kind: 'gain', node });
-    return node;
+    return this.track({ kind: 'gain', node: new FakeGainNode() });
   }
 
   createOscillator(): FakeOscillatorNode {
-    const node = new FakeOscillatorNode();
-    this.nodes.push({ kind: 'oscillator', node });
-    return node;
+    return this.track({ kind: 'oscillator', node: new FakeOscillatorNode() });
   }
 
   createBiquadFilter(): FakeBiquadFilterNode {
-    const node = new FakeBiquadFilterNode();
-    this.nodes.push({ kind: 'biquad', node });
-    return node;
+    return this.track({ kind: 'biquad', node: new FakeBiquadFilterNode() });
   }
 
   createBuffer(numberOfChannels: number, length: number, sampleRate: number): FakeAudioBuffer {
@@ -148,9 +142,12 @@ export class FakeAudioContext implements AudioContextLike {
   }
 
   createBufferSource(): FakeAudioBufferSourceNode {
-    const node = new FakeAudioBufferSourceNode();
-    this.nodes.push({ kind: 'buffer-source', node });
-    return node;
+    return this.track({ kind: 'buffer-source', node: new FakeAudioBufferSourceNode() });
+  }
+
+  private track<R extends FakeNodeRecord>(record: R): R['node'] {
+    this.nodes.push(record);
+    return record.node;
   }
 
   resume(): Promise<void> {
