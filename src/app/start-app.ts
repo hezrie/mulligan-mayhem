@@ -3,11 +3,11 @@
 import { DEFAULT_HOLE_ID, getHole } from '../core/course/holes/index.ts';
 import { GameSession } from '../core/game/session.ts';
 import type { Shot } from '../core/game/shot.ts';
-import { advanceClock } from '../core/physics/timestep.ts';
 import { attachAimInput } from '../input/pointer.ts';
 import { createRenderer, type Renderer } from '../render/renderer.ts';
 import { createBrowserSoundscape, type BrowserSoundscape } from '../ui/audio/browser.ts';
 import type { SoundTrigger } from '../ui/audio/cues.ts';
+import { createPacer, type Pacer } from '../ui/bullet-time.ts';
 import { createCompleteScreen } from '../ui/complete-screen.ts';
 import { createHud } from '../ui/hud.ts';
 import { createShell } from '../ui/shell.ts';
@@ -16,6 +16,8 @@ import { createShell } from '../ui/shell.ts';
 export interface AppHandles {
   readonly session: GameSession;
   readonly renderer: Renderer;
+  /** Paces the real-time loop (bullet time near the cup); the test API reports its snapshot. */
+  readonly pacer: Pick<Pacer, 'snapshot'>;
   /** Stops the frame loop from advancing the simulation (tests drive it instead). */
   readonly useManualClock: () => void;
   /** The one shot path: pointer input and `__MM__.shoot` both call it. Throws ShotRejectedError. */
@@ -65,14 +67,14 @@ export function startApp(app: HTMLElement, canvas: HTMLCanvasElement): AppHandle
   const complete = createCompleteScreen(app, restart);
   createShell(app, { window });
 
-  let accumulator = 0;
+  // Real-time loop only: __MM__.fastForward calls session.advance directly, unpaced.
+  const pacer = createPacer(() => true);
   let last = performance.now();
   function frame(now: number): void {
-    const clock = advanceClock(accumulator, (now - last) / 1000);
+    const steps = pacer.steps(session.state, session.course.hole.cup, (now - last) / 1000);
     last = now;
-    accumulator = clock.accumulator;
     // One step at a time, so each sound is stamped with the step that produced it.
-    if (!manualClock) for (let i = 0; i < clock.steps; i++) session.advance(1).forEach(hear);
+    if (!manualClock) for (let i = 0; i < steps; i++) session.advance(1).forEach(hear);
     renderer.draw(session.course, session.state, aim, {
       nowMs: now,
       events: session.drainEvents(),
@@ -86,6 +88,7 @@ export function startApp(app: HTMLElement, canvas: HTMLCanvasElement): AppHandle
   return {
     session,
     renderer,
+    pacer,
     useManualClock: () => {
       manualClock = true;
     },
