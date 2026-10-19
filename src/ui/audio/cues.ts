@@ -1,5 +1,6 @@
 import type { GameEvent } from '../../core/game/machine.ts';
 import type { AudioEngine } from './engine.ts';
+import { hapticFor, type HapticCue, type Haptics } from './haptics.ts';
 import { voiceFor, type Voice } from './voices.ts';
 
 /** Softer contacts than this are rolling scuffs, not knocks worth a sound. */
@@ -52,10 +53,12 @@ export interface Soundscape {
 export interface SoundscapeOptions {
   readonly engine: Pick<AudioEngine, 'play' | 'now'>;
   readonly log: CueLog;
+  readonly haptics?: Pick<Haptics, 'pulse'>;
 }
 
-export function createSoundscape({ engine, log }: SoundscapeOptions): Soundscape {
+export function createSoundscape({ engine, log, haptics }: SoundscapeOptions): Soundscape {
   let lastBounceStep = -Infinity;
+  const buzz = (cue: HapticCue): void => haptics?.pulse(hapticFor(cue));
 
   // Logged before playing, so a locked or missing engine still leaves a full cue log.
   const cue = (name: string, step: number, voice: Voice): void => {
@@ -68,16 +71,23 @@ export function createSoundscape({ engine, log }: SoundscapeOptions): Soundscape
       switch (trigger.type) {
         case 'shot':
           cue('putt', step, voiceFor('putt', { power: trigger.power }));
+          buzz({ type: 'putt', power: trigger.power });
           return;
         case 'bounce':
           if (trigger.impulse < BOUNCE_MIN_IMPULSE) return;
-          if (step - lastBounceStep < BOUNCE_COOLDOWN_STEPS) return;
+          // A step earlier than the last bounce means a new or restarted hole, so no cooldown.
+          if (step >= lastBounceStep && step - lastBounceStep < BOUNCE_COOLDOWN_STEPS) return;
           lastBounceStep = step;
           // Seeding the jitter with the step makes a replay sound the same every time.
           cue('bounce', step, voiceFor('bounce', { impulse: trigger.impulse, seed: step }));
+          buzz({ type: 'bounce', impulse: trigger.impulse });
           return;
         case 'cup':
+          // The cup buzz waits for 'holed', which knows whether to celebrate a hole in one.
           cue('cup', step, voiceFor('cup', {}));
+          return;
+        case 'holed':
+          buzz({ type: trigger.strokes === 1 ? 'hole-in-one' : 'cup' });
           return;
         default:
           return;

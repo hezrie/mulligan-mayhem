@@ -92,3 +92,57 @@ describe('createBrowserSoundscape', () => {
     expect(cueLog.entries()).toEqual([{ channel: 'sfx', cue: 'cup', step: 4 }]);
   });
 });
+
+describe('createBrowserSoundscape haptics', () => {
+  /** A navigator whose vibrate throws 'Illegal invocation' unless called as its method. */
+  function fakeNavigator() {
+    const calls: unknown[] = [];
+    const navigator = {
+      vibrate(this: unknown, pattern: VibratePattern): boolean {
+        if (this !== navigator) throw new TypeError('Illegal invocation');
+        calls.push(pattern);
+        return true;
+      },
+    };
+    return { navigator, calls };
+  }
+
+  it('pulses nothing until the first pointerdown on the window', () => {
+    const { navigator, calls } = fakeNavigator();
+    const win = Object.assign(new EventTarget(), { navigator, document: fakeDocument() });
+    const { soundscape, haptics } = createBrowserSoundscape(win);
+    soundscape.handle({ type: 'shot', power: 0.925 }, { step: 0, par: 3 });
+    expect(calls).toEqual([]);
+
+    win.dispatchEvent(new Event('pointerdown'));
+    soundscape.handle({ type: 'shot', power: 0.925 }, { step: 1, par: 3 });
+    soundscape.handle({ type: 'holed', strokes: 1 }, { step: 2, par: 3 });
+    expect(calls).toEqual([24, [30, 60, 30, 60, 120]]);
+    expect(haptics.enabled()).toBe(true);
+  });
+
+  it('arms on pointerdown in the capture phase', () => {
+    const { navigator, calls } = fakeNavigator();
+    const win = Object.assign(new EventTarget(), { navigator, document: fakeDocument() });
+    // Only capture-phase listeners are registered, so arming must come from one of them.
+    const register = win.addEventListener.bind(win);
+    vi.spyOn(win, 'addEventListener').mockImplementation((type, listener, options) => {
+      if (typeof options === 'object' && options.capture === true) {
+        register(type, listener, options);
+      }
+    });
+    const { soundscape } = createBrowserSoundscape(win);
+    win.dispatchEvent(new Event('pointerdown'));
+    soundscape.handle({ type: 'shot', power: 1 }, { step: 0, par: 3 });
+    expect(calls).toEqual([25]);
+  });
+
+  it('builds without navigator.vibrate, and its shots pulse nothing', () => {
+    const win = Object.assign(new EventTarget(), { navigator: {}, document: fakeDocument() });
+    const { soundscape } = createBrowserSoundscape(win);
+    expect(() => {
+      win.dispatchEvent(new Event('pointerdown'));
+      soundscape.handle({ type: 'shot', power: 1 }, { step: 0, par: 3 });
+    }).not.toThrow();
+  });
+});
