@@ -2,14 +2,19 @@ import { hashFor, INITIAL_ROUTE, route, topScreen } from './router.ts';
 import type { RouteAction, RouteState, ScreenId } from './router.ts';
 import type { Nav, Screen } from './screen.ts';
 import { createMenuScreen } from './screens/menu.ts';
+import { createSettingsScreen } from './screens/settings.ts';
+import type { SettingsStore } from './settings-store.ts';
 
 /** Screens with a view. 'play' is the canvas itself; ids without an entry mount nothing yet. */
-const SCREENS: Partial<Record<ScreenId, (nav: Nav) => Screen>> = {
+const SCREENS: Partial<Record<ScreenId, (nav: Nav, deps: ShellDeps) => Screen>> = {
   menu: createMenuScreen,
+  settings: (nav, deps) => createSettingsScreen(nav, deps.settings),
 };
 
 export interface ShellDeps {
   readonly window: Window;
+  /** The page's one settings store; screens must reuse it, never create their own. */
+  readonly settings: SettingsStore;
 }
 
 /**
@@ -40,7 +45,7 @@ export function createShell(app: HTMLElement, deps: ShellDeps): void {
     const el = document.createElement('section');
     el.className = 'screen';
     el.dataset['testid'] = `screen-${id}`;
-    const screen = create(nav);
+    const screen = create(nav, deps);
     screen.mount(el);
     app.append(el);
     mounted = { id, screen, el };
