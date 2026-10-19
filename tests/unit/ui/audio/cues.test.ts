@@ -6,22 +6,26 @@ import {
   type SoundTrigger,
 } from '../../../../src/ui/audio/cues.ts';
 import { createHaptics, hapticFor } from '../../../../src/ui/audio/haptics.ts';
+import { stingerFor } from '../../../../src/ui/audio/stingers.ts';
 import { voiceFor, type Voice } from '../../../../src/ui/audio/voices.ts';
 
 const PAR = 3;
 
-function setup(playResult = true) {
-  const play = vi.fn<(voice: Voice) => boolean>(() => playResult);
-  const engine = { play, now: () => 0 };
+function setup(playResult = true, now = 0) {
+  const play = vi.fn<(voice: Voice, options?: { readonly at?: number }) => boolean>(
+    () => playResult,
+  );
+  const engine = { play, now: () => now };
   const log = createCueLog();
   const soundscape = createSoundscape({ engine, log });
   const at = (step: number, trigger: SoundTrigger): void => {
     soundscape.handle(trigger, { step, par: PAR });
   };
-  return { play, log, at };
+  return { play, log, at, soundscape };
 }
 
 const sfx = (cue: CueLogEntry['cue'], step: number): CueLogEntry => ({ channel: 'sfx', cue, step });
+const stinger = (cue: string, step: number): CueLogEntry => ({ channel: 'stinger', cue, step });
 
 describe('createSoundscape mapping', () => {
   it('plays putt for a shot, bounce for a hard bounce and cup for cup', () => {
@@ -33,13 +37,13 @@ describe('createSoundscape mapping', () => {
     expect(play).toHaveBeenCalledTimes(3);
   });
 
-  it('produces no cue for rest or holed', () => {
+  it('produces no cue for rest and no sfx cue for holed', () => {
     const { play, log, at } = setup();
     at(4, { type: 'rest', forced: false });
     at(5, { type: 'rest', forced: true });
     at(6, { type: 'holed', strokes: 2 });
-    expect(log.entries()).toEqual([]);
-    expect(play).not.toHaveBeenCalled();
+    expect(log.entries()).toEqual([stinger('birdie', 6)]);
+    expect(play.mock.calls).toEqual([[stingerFor(2, PAR).voice, { at: 0.25 }]]);
   });
 
   it('logs and plays a one-putt hole in order with the matching voices', () => {
@@ -48,10 +52,53 @@ describe('createSoundscape mapping', () => {
     at(55, { type: 'bounce', impulse: 817.3 });
     at(151, { type: 'cup' });
     at(151, { type: 'holed', strokes: 1 });
-    expect(log.entries()).toEqual([sfx('putt', 0), sfx('bounce', 55), sfx('cup', 151)]);
+    expect(log.entries()).toEqual([
+      sfx('putt', 0),
+      sfx('bounce', 55),
+      sfx('cup', 151),
+      stinger('hole-in-one', 151),
+    ]);
     expect(play.mock.calls).toEqual([
       [voiceFor('putt', { power: 0.5 })],
       [voiceFor('bounce', { impulse: 817.3, seed: 55 })],
+      [voiceFor('cup', {})],
+      [stingerFor(1, PAR).voice, { at: 0.25 }],
+    ]);
+  });
+});
+
+describe('createSoundscape stingers', () => {
+  it.each([
+    [1, 'hole-in-one'],
+    [2, 'birdie'],
+    [3, 'par'],
+    [4, 'bogey'],
+    [6, 'double-bogey'],
+  ])('holed in %d on a par 3 logs and plays %s 0.25 s after now()', (strokes, name) => {
+    const { play, log, at } = setup(true, 5);
+    at(294, { type: 'holed', strokes });
+    expect(log.entries()).toEqual([stinger(name, 294)]);
+    expect(play.mock.calls).toEqual([[stingerFor(strokes, PAR).voice, { at: 5.25 }]]);
+  });
+
+  it('takes par from the sound context', () => {
+    const { play, log, soundscape } = setup(true, 5);
+    soundscape.handle({ type: 'holed', strokes: 4 }, { step: 300, par: 4 });
+    expect(log.entries()).toEqual([stinger('par', 300)]);
+    expect(play.mock.calls).toEqual([[stingerFor(4, 4).voice, { at: 5.25 }]]);
+  });
+
+  it('leaves the sfx cues of a holed-out hole unchanged', () => {
+    const { play, log, at } = setup(true, 5);
+    at(0, { type: 'shot', power: 0.5 });
+    at(290, { type: 'cup' });
+    at(294, { type: 'holed', strokes: 3 });
+    expect(log.entries().filter((e) => e.channel === 'sfx')).toEqual([
+      sfx('putt', 0),
+      sfx('cup', 290),
+    ]);
+    expect(play.mock.calls.slice(0, 2)).toEqual([
+      [voiceFor('putt', { power: 0.5 })],
       [voiceFor('cup', {})],
     ]);
   });

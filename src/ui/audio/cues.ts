@@ -1,6 +1,7 @@
 import type { GameEvent } from '../../core/game/machine.ts';
 import type { AudioEngine } from './engine.ts';
 import { hapticFor, type HapticCue, type Haptics } from './haptics.ts';
+import { stingerFor } from './stingers.ts';
 import { voiceFor, type Voice } from './voices.ts';
 
 /** Softer contacts than this are rolling scuffs, not knocks worth a sound. */
@@ -8,6 +9,8 @@ const BOUNCE_MIN_IMPULSE = 30;
 // 3 physics steps (25 ms): a ball rattling in a corner gives one tonk, not a burst.
 const BOUNCE_COOLDOWN_STEPS = 3;
 const DEFAULT_LOG_CAPACITY = 200;
+// The stinger waits until the cup plunk (105 ms in, 180 ms long) has mostly landed.
+const STINGER_DELAY_S = 0.25;
 
 export type SoundTrigger = GameEvent | { readonly type: 'shot'; readonly power: number };
 
@@ -42,7 +45,7 @@ export function createCueLog(capacity = DEFAULT_LOG_CAPACITY): CueLog {
 
 export interface SoundContext {
   readonly step: number;
-  /** Unused until score stingers; part of the signature so the app is wired only once. */
+  /** The current hole's par, which picks the score stinger. */
   readonly par: number;
 }
 
@@ -67,7 +70,7 @@ export function createSoundscape({ engine, log, haptics }: SoundscapeOptions): S
   };
 
   return {
-    handle(trigger, { step }) {
+    handle(trigger, { step, par }) {
       switch (trigger.type) {
         case 'shot':
           cue('putt', step, voiceFor('putt', { power: trigger.power }));
@@ -86,9 +89,13 @@ export function createSoundscape({ engine, log, haptics }: SoundscapeOptions): S
           // The cup buzz waits for 'holed', which knows whether to celebrate a hole in one.
           cue('cup', step, voiceFor('cup', {}));
           return;
-        case 'holed':
+        case 'holed': {
           buzz({ type: trigger.strokes === 1 ? 'hole-in-one' : 'cup' });
+          const { name, voice } = stingerFor(trigger.strokes, par);
+          log.record({ channel: 'stinger', cue: name, step });
+          engine.play(voice, { at: engine.now() + STINGER_DELAY_S });
           return;
+        }
         default:
           return;
       }

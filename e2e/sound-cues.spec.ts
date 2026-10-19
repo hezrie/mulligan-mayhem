@@ -2,11 +2,13 @@ import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures.ts';
 import { loadReplay, openHole, playShots } from './juice-helpers.ts';
 
-/** The sfx cues as `name@step`, so later stinger and crowd cues don't break these assertions. */
-async function sfxCues(page: Page): Promise<string[]> {
+/** One channel's cues as `name@step`, so cues on other channels don't break these assertions. */
+async function cuesOn(page: Page, channel: string): Promise<string[]> {
   const log = await page.evaluate(() => window.__MM__!.getCueLog());
-  return log.filter((e) => e.channel === 'sfx').map((e) => `${e.cue}@${String(e.step)}`);
+  return log.filter((e) => e.channel === channel).map((e) => `${e.cue}@${String(e.step)}`);
 }
+
+const sfxCues = (page: Page): Promise<string[]> => cuesOn(page, 'sfx');
 
 /** Presses on the ball and drags it `dx`, `dy` CSS px in 6 steps, then releases. */
 async function dragFromBall(page: Page, dx: number, dy: number): Promise<void> {
@@ -47,6 +49,22 @@ test.describe('sound cues: putts, bounces and the cup drop are heard', () => {
       expect(await page.evaluate(() => window.__MM__!.getStateHash())).toBe(
         replay.expected.finalStateHash,
       );
+    });
+  }
+
+  const stingers: [string, string][] = [
+    ['skeleton-01-hole-in-one.json', 'hole-in-one@151'],
+    ['skeleton-01-par.json', 'par@294'],
+    ['skeleton-01-wall-bank-bogey.json', 'bogey@475'],
+  ];
+
+  for (const [file, expected] of stingers) {
+    test(`${file} logs exactly the ${expected} stinger`, async ({ page }) => {
+      const replay = loadReplay(file);
+      await openHole(page, replay.holeId, replay.seed);
+      await playShots(page, replay.shots);
+
+      expect(await cuesOn(page, 'stinger')).toEqual([expected]);
     });
   }
 
