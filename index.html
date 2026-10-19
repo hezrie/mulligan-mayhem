@@ -93,6 +93,25 @@
       .complete[hidden] {
         display: none;
       }
+      /* A hint, never a wall: it must not catch the drag it is teaching. */
+      .onboarding-caption {
+        position: absolute;
+        left: 50%;
+        bottom: max(env(safe-area-inset-bottom), 24px);
+        transform: translateX(-50%);
+        width: max-content;
+        max-width: calc(100% - 2rem);
+        margin: 0;
+        padding: 0.5rem 1rem;
+        background: var(--panel);
+        border-radius: 999px;
+        text-align: center;
+        font-size: 1.1rem;
+        pointer-events: none;
+      }
+      .onboarding-caption[hidden] {
+        display: none;
+      }
       .complete h2 {
         margin: 0;
         padding: 1rem 1.5rem;
