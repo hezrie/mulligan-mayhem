@@ -10,6 +10,8 @@ import type { SoundTrigger } from '../ui/audio/cues.ts';
 import { createPacer, type Pacer } from '../ui/bullet-time.ts';
 import { createCompleteScreen } from '../ui/complete-screen.ts';
 import { createHud } from '../ui/hud.ts';
+import { createOnboarding } from '../ui/onboarding.ts';
+import { createSaveStore } from '../ui/save-store.ts';
 import { createSettingsStore } from '../ui/settings-store.ts';
 import { createShell } from '../ui/shell.ts';
 import { getBrowserStorage } from '../ui/storage.ts';
@@ -43,6 +45,9 @@ export function startApp(app: HTMLElement, canvas: HTMLCanvasElement): AppHandle
   // The page's one settings store; the settings screen must reuse it, never create another.
   const settings = createSettingsStore(getBrowserStorage(window));
   applyTextSize(document.documentElement, settings);
+  // The page's one save store; later features must reuse it, never create another.
+  const saves = createSaveStore(getBrowserStorage(window));
+  const onboarding = createOnboarding(app, saves);
   const { soundscape, cueLog, debugState } = createBrowserSoundscape(window);
   const hear = (trigger: SoundTrigger): void => {
     soundscape.handle(trigger, { step: session.state.step, par: session.course.hole.par });
@@ -60,8 +65,10 @@ export function startApp(app: HTMLElement, canvas: HTMLCanvasElement): AppHandle
       aim = shot;
     },
     // The putt is sounded here, not in shoot(): the test API sounds its own shots via onShot.
+    // Only pointer shots onboard the player: __MM__.shoot calls shoot() and never reaches here.
     onShoot: (shot) => {
       shoot(shot);
+      onboarding.markRealShot();
       hear({ type: 'shot', power: shot.power });
     },
   });
@@ -86,10 +93,14 @@ export function startApp(app: HTMLElement, canvas: HTMLCanvasElement): AppHandle
     // One step at a time, so each sound is stamped with the step that produced it.
     if (!manualClock && !shell.isPaused())
       for (let i = 0; i < steps; i++) session.advance(1).forEach(hear);
-    renderer.draw(session.course, session.state, aim, {
-      nowMs: now,
-      events: session.drainEvents(),
-    });
+    onboarding.update(session.state, aim !== null);
+    renderer.draw(
+      session.course,
+      session.state,
+      aim,
+      { nowMs: now, events: session.drainEvents() },
+      onboarding.hint(now),
+    );
     hud.update(session.state, session.course.hole);
     complete.update(session.state, session.course.hole, now);
     requestAnimationFrame(frame);
