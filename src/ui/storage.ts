@@ -6,6 +6,9 @@ export interface KeyValueStorage {
 
 /** Versioned so a future settings v2 can migrate from v1 instead of misreading it. */
 export const SETTINGS_KEY = 'mm.settings.v1';
+export const SAVE_KEY = 'mm.save.v1';
+/** Holds the last unreadable save verbatim, so lost progress can still be recovered by hand. */
+export const SAVE_CORRUPT_KEY = 'mm.save.corrupt';
 
 /**
  * Returns the host's localStorage, or null when merely reading the property throws
