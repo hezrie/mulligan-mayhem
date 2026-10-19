@@ -7,6 +7,7 @@ import { attachAimInput } from '../input/pointer.ts';
 import { createRenderer, type Renderer } from '../render/renderer.ts';
 import { createBrowserSoundscape, type BrowserSoundscape } from '../ui/audio/browser.ts';
 import type { SoundTrigger } from '../ui/audio/cues.ts';
+import { createBestStarsRecorder, safeLocalStorage } from '../ui/best-stars.ts';
 import { createPacer, type Pacer } from '../ui/bullet-time.ts';
 import { createCompleteScreen } from '../ui/complete-screen.ts';
 import { createHud } from '../ui/hud.ts';
@@ -82,6 +83,7 @@ export function startApp(app: HTMLElement, canvas: HTMLCanvasElement): AppHandle
     shell.nav.open('pause');
   });
   const complete = createCompleteScreen(app, restart);
+  const bestStars = createBestStarsRecorder(safeLocalStorage(() => window.localStorage));
 
   // Real-time loop only: __MM__.fastForward calls session.advance directly, unpaced.
   const pacer = createPacer(() => true);
@@ -103,6 +105,8 @@ export function startApp(app: HTMLElement, canvas: HTMLCanvasElement): AppHandle
     );
     hud.update(session.state, session.course.hole);
     complete.update(session.state, session.course.hole, now);
+    // Outside the manual-clock guard: __MM__.fastForward can sink the ball between frames.
+    bestStars.update(session.state, session.course.hole);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

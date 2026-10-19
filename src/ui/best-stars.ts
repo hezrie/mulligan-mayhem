@@ -1,6 +1,9 @@
+import type { Hole } from '../core/course/schema.ts';
+import type { GameState } from '../core/game/state.ts';
 import {
   mergeBestStars,
   parseBestStars,
+  starsFor,
   totalStars,
   type BestStars,
   type Stars,
@@ -40,6 +43,25 @@ export function readStarTotal(storage: StarStorage, holeIds: readonly string[]):
     if (stars !== undefined) listed[id] = stars;
   }
   return totalStars(listed);
+}
+
+export interface BestStarsRecorder {
+  update(state: Readonly<GameState>, hole: Hole): void;
+}
+
+/**
+ * Called every frame, so it records on the edge into 'holed' rather than on each holed frame.
+ * Frames rather than session events, because `__MM__.fastForward` advances the session directly.
+ */
+export function createBestStarsRecorder(storage: StarStorage): BestStarsRecorder {
+  let wasHoled = false;
+  return {
+    update(state, hole) {
+      const holed = state.phase === 'holed';
+      if (holed && !wasHoled) recordBestStars(storage, hole.id, starsFor(state.strokes, hole.par));
+      wasHoled = holed;
+    },
+  };
 }
 
 /** Merely reading `localStorage` throws in some sandboxed or privacy-mode pages. */
