@@ -1,4 +1,6 @@
+import type { Hole } from './course/schema.ts';
 import type { GameState } from './game/state.ts';
+import type { Vec2 } from './math/vec2.ts';
 
 /**
  * Stable hashing for determinism and golden-replay tests. FNV-1a 64-bit runs over the exact
@@ -59,5 +61,28 @@ export function hashState(state: GameState): string {
     state.ball.vel.y,
     state.lastRest.x,
     state.lastRest.y,
+  ]);
+}
+
+/** Hash of a hole's full data in a fixed, count-prefixed field order (cup radius −1 if absent). */
+export function hashHole(hole: Hole): string {
+  const points = (ps: readonly Vec2[]): number[] => [ps.length, ...ps.flatMap((p) => [p.x, p.y])];
+  return hashValues([
+    hole.id,
+    hole.name,
+    hole.par,
+    hole.size.width,
+    hole.size.height,
+    ...points(hole.boundary),
+    hole.walls.length,
+    ...hole.walls.flatMap((w) => [w.a.x, w.a.y, w.b.x, w.b.y]),
+    hole.tee.x,
+    hole.tee.y,
+    hole.cup.x,
+    hole.cup.y,
+    hole.cup.radius ?? -1,
+    hole.terrain.base,
+    hole.terrain.zones.length,
+    ...hole.terrain.zones.flatMap((z) => [z.kind, ...points(z.polygon)]),
   ]);
 }

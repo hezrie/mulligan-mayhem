@@ -51,13 +51,14 @@ tested headlessly**, so CI, not an agent's opinion, decides whether a change wor
 | `core/physics/timestep.ts`  | Real-time accumulator → number of fixed steps                                            |
 | `core/course/schema.ts`     | zod `HoleSchema`; the `Hole` type is inferred from it                                    |
 | `core/course/holes/*.json`  | Hole data; `holes/index.ts` validates every hole at load                                 |
+| `core/course/generator.ts`  | Daily Course: `generateHole(seed, index)` (integer layout) and `seedForDate` (FNV-1a)    |
 | `core/game/shot.ts`         | `Shot { angle, power }`                                                                  |
 | `core/game/state.ts`        | `GameState` and `GamePhase`                                                              |
 | `core/game/machine.ts`      | Pure transitions: `createGame`, `shoot`, `tick`                                          |
 | `core/game/session.ts`      | `GameSession`: a small mutable wrapper used by main, tests, replays                      |
 | `core/game/replay.ts`       | `ReplayFileSchema` + `playReplay`: the one way replays are played (tests, recorder, e2e) |
 | `core/scoring/score.ts`     | Score names and share-card emoji from strokes and par                                    |
-| `core/hash.ts`              | Stable hash of `GameState` from exact float64 bits                                       |
+| `core/hash.ts`              | Stable hash of `GameState` (and `hashHole`) from exact float64 bits                      |
 
 ## Shell modules
 
@@ -166,15 +167,16 @@ On top of field types, validation enforces several layout rules:
 
 ## Test API (`window.__MM__`, dev/test/e2e builds only)
 
-| Method                           | Behaviour                                                                       |
-| -------------------------------- | ------------------------------------------------------------------------------- |
-| `ready`                          | `true` once installed                                                           |
-| `loadHole(id, seed = 1)`         | Loads a hole and switches to a **manual clock** (real-time loop stops stepping) |
-| `shoot(angle, power)`            | Same as a player shot; throws unless the phase is `aiming`                      |
-| `fastForward(ms \| 'untilRest')` | Runs fixed steps synchronously; returns the number of steps run                 |
-| `getState()`                     | A copy of `GameState`                                                           |
-| `getStateHash()`                 | `hashState(state)`: equal to the Node golden replay for the same shots          |
-| `getBallClientPosition()`        | The ball's position in client pixels, for real pointer-input tests              |
+| Method                              | Behaviour                                                                       |
+| ----------------------------------- | ------------------------------------------------------------------------------- |
+| `ready`                             | `true` once installed                                                           |
+| `loadHole(id, seed = 1)`            | Loads a hole and switches to a **manual clock** (real-time loop stops stepping) |
+| `shoot(angle, power)`               | Same as a player shot; throws unless the phase is `aiming`                      |
+| `fastForward(ms \| 'untilRest')`    | Runs fixed steps synchronously; returns the number of steps run                 |
+| `getState()`                        | A copy of `GameState`                                                           |
+| `getStateHash()`                    | `hashState(state)`: equal to the Node golden replay for the same shots          |
+| `getGeneratedHoleHash(seed, index)` | `hashHole(generateHole(seed, index))`: equal to Node for the same inputs        |
+| `getBallClientPosition()`           | The ball's position in client pixels, for real pointer-input tests              |
 
 `__TEST_API__` is `false` in production builds, so the bundler removes the code entirely. The
 `prod-smoke` e2e project checks both the runtime and the shipped bundle.
